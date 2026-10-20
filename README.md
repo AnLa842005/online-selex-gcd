@@ -19,7 +19,10 @@
 ![image](assets/selex.png)
 
 
+## NOTE
 
+We are currently investigating the issue reported in https://github.com/SarahRastegar/SelEx/issues/11. 
+This issue shows that our current codebase is sensitive to the order bias in the datasets. The fixed codebase and the updated results for affected datasets are coming soon.  
 
 ## Dependencies
 
