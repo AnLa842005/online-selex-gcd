@@ -1,3 +1,7 @@
+> Reproducible offline CUB baseline branch: see [BASELINE_SETUP.md](BASELINE_SETUP.md)
+> for Windows smoke testing, Linux GPU training, exact upstream provenance,
+> environment variables, and known upstream limitations. Original attribution follows.
+
 # SelEx: Self-Expertise in Fine-Grained Generalized Category Discovery
 
 
