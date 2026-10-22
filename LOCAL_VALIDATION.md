@@ -71,8 +71,7 @@ training was run locally.
   common credential patterns. LICENSE and authors' attribution retained.
 - Full Linux/A6000 training, full final-report subprocess execution and paper
   metric reproduction remain unexecuted. They must be validated on the server.
-- GitHub visibility is private, following the request's initial default because
-  its later public/anonymous-clone instructions conflict. Anonymous cloning of a
-  private repository is unavailable; authenticated server access is required.
+- GitHub visibility is public, as explicitly confirmed by the user. Anonymous
+  Git access was verified after the visibility change.
 
 No algorithmic changes. The upstream order-bias caveat in BASELINE_SETUP.md applies.

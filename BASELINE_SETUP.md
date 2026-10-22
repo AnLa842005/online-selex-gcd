@@ -119,8 +119,7 @@ memory. Smoke metrics are never baseline research results.
 
 ## Linux GPU server handoff
 
-Run on the server itself, in a shell with Conda initialized. Authentication is
-required to clone if the repository is private. Replace only the three storage
+Run on the server itself, in a shell with Conda initialized. The repository is public and cloning does not require authentication. Replace only the three storage
 paths with actual server locations.
 
 ```bash
