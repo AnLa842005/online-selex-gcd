@@ -2,7 +2,7 @@ import numpy as np
 import copy
 import random
 from project_utils.cluster_utils import cluster_acc
-from sklearn.utils._joblib import Parallel, delayed, effective_n_jobs
+from joblib import Parallel, delayed, effective_n_jobs
 from sklearn.utils import check_random_state
 import torch
 
@@ -173,7 +173,7 @@ class K_Means:
 
     def fit_mix_once(self, u_feats, l_feats, l_targets, random_state):
 
-        device = torch.device('cuda')
+        device = u_feats.device
 
         def supp_idxs(c):
             return l_targets.eq(c).nonzero().squeeze(1)
@@ -245,7 +245,7 @@ class K_Means:
                             else:
                                 sparse_cluster[idx]=False
                         cluster_distance=torch.argsort(dist[cluster_free_unseen.cpu(), :][:, sparse_cluster], dim=1)
-                        mid_labels = torch.from_numpy(np.arange(self.k))[sparse_cluster][cluster_distance]
+                        mid_labels = torch.from_numpy(np.arange(self.k, dtype=np.int64))[sparse_cluster][cluster_distance]
                         if mid_labels.shape[1]!=0:
                             u_labels[cluster_free_unseen] = mid_labels[:, 0]
                             cluster_free_unseen[0:] = False

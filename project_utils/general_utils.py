@@ -137,12 +137,12 @@ def init_experiment(args, runner_name=None, exp_id=None):
     if exp_id is None:
 
         # Unique identifier for experiment
-        now = '({:02d}.{:02d}.{}_|_'.format(datetime.now().day, datetime.now().month, datetime.now().year) + \
+        now = '({:02d}.{:02d}.{}_at_'.format(datetime.now().day, datetime.now().month, datetime.now().year) + \
               datetime.now().strftime("%S.%f")[:-3] + ')'
 
         log_dir = os.path.join(root_dir, 'log', now)
         while os.path.exists(log_dir):
-            now = '({:02d}.{:02d}.{}_|_'.format(datetime.now().day, datetime.now().month, datetime.now().year) + \
+            now = '({:02d}.{:02d}.{}_at_'.format(datetime.now().day, datetime.now().month, datetime.now().year) + \
                   datetime.now().strftime("%S.%f")[:-3] + ')'
 
             log_dir = os.path.join(root_dir, 'log', now)

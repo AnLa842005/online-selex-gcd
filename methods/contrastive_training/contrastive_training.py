@@ -1,7 +1,8 @@
 import sys
-sys.path.append('../../../SelEx/')
+
 dino_v1 = True
 
+from project_utils.reproduction import load_dino_backbone, limited_batches, save_training_state, restore_training_state
 import argparse
 import os
 
@@ -233,7 +234,24 @@ def train( projection_head, model, train_loader, test_loader, unlabelled_train_l
     prototype_extraction_interval=args.prototype_extraction_interval
     Distance=args.distance
 
-    for epoch in range(args.epochs):
+    start_epoch = 0
+    if getattr(args, 'resume', None):
+        restored = restore_training_state(args.resume, model, projection_head, optimizer, exp_lr_scheduler)
+        import shutil
+        for name in ('model_best.pt', 'model_proj_head_best.pt', 'model_label_head_best.pt'):
+            source = os.path.join(os.path.dirname(args.resume), name)
+            if os.path.isfile(source):
+                shutil.copy2(source, os.path.join(args.model_dir, name))
+        start_epoch = restored['epoch'] + 1
+        best_test_acc_lab = restored['best_test_acc_lab']
+        best_stats = restored['best_stats']
+        best_epoch = restored['best_epoch']
+        Total_loss = restored['total_loss']
+        Contrastive_loss = restored['contrastive_loss']
+        accuracy_old, accuracy_new, accuracy_all = restored['accuracies']
+        if start_epoch % prototype_extraction_interval:
+            raise ValueError('Resume requires a prototype extraction epoch')
+    for epoch in range(start_epoch, args.epochs):
         loss_record = AverageMeter()
         train_acc_record = AverageMeter()
 
@@ -267,7 +285,7 @@ def train( projection_head, model, train_loader, test_loader, unlabelled_train_l
         projection_head.train()
         model.train()
 
-        for batch_idx, batch in enumerate(tqdm(train_loader)):
+        for batch_idx, batch in enumerate(tqdm(limited_batches(train_loader, getattr(args, 'max_train_batches', 0)))):
 
             images, class_labels, uq_idxs, mask_lab = batch
             mask_lab = mask_lab[:, 0]
@@ -376,7 +394,16 @@ def train( projection_head, model, train_loader, test_loader, unlabelled_train_l
             loss = loss_in
             loss_record.update(loss.item(), class_labels.size(0))
             optimizer.zero_grad()
+            if not torch.isfinite(loss):
+                raise FloatingPointError('Non-finite SelEx loss')
+            if getattr(args, 'max_train_batches', 0):
+                print(f'SMOKE USE={contrastive_loss.item()} SSE={sup_con_loss.item()} total={loss.item()}', flush=True)
             loss.backward()
+            if getattr(args, 'max_train_batches', 0):
+                parameters = list(model.parameters()) + list(projection_head.parameters())
+                if not all(torch.isfinite(p.grad).all() for p in parameters if p.grad is not None):
+                    raise FloatingPointError('Non-finite smoke gradient')
+                args.smoke_losses = dict(USE=contrastive_loss.item(), SSE=sup_con_loss.item(), total=loss.item())
             optimizer.step()
 
         print('Epoch: {} Avg Loss: {:.3f} | Constrastive: {:.3f} '.format(epoch, loss_record.avg, loss_cons_record.avg))
@@ -433,6 +460,10 @@ def train( projection_head, model, train_loader, test_loader, unlabelled_train_l
             best_test_acc_lab = old_acc_test
             best_epoch = epoch
 
+        save_training_state(os.path.join(args.model_dir, 'training_state.pt'), model, projection_head,
+                            optimizer, exp_lr_scheduler, epoch, best_test_acc_lab=best_test_acc_lab,
+                            best_stats=best_stats, best_epoch=best_epoch, total_loss=Total_loss,
+                            contrastive_loss=Contrastive_loss, accuracies=(accuracy_old, accuracy_new, accuracy_all))
         print('Best Train Epochs:  {}'.format(best_epoch))
 
 
@@ -511,7 +542,7 @@ def extract_labeled_protos(model, train_loader, args):
 
     for batch_idx, (images, label, uq_idx, mask_lab_) in enumerate(tqdm(train_loader)):
 
-        images = images[0].cuda()
+        images = images[0].to(device)
         label, mask_lab_ = label.to(device), mask_lab_.to(device).bool()
 
         # Pass features through base model and then additional learnable transform (linear layer)
@@ -602,7 +633,7 @@ def test_kmeans(model, test_loader, epoch,
     # First extract all features
     for batch_idx, (images, label, _) in enumerate(tqdm(test_loader)):
 
-        images = images.cuda()
+        images = images.to(device)
         # Pass features through base model and then additional learnable transform (linear layer)
         feats = model(images)
         all_feats.append(torch.nn.functional.normalize(feats, dim=-1).cpu().numpy())
@@ -643,6 +674,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
             description='cluster',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--max-train-batches', type=int, default=0)
+    parser.add_argument('--resume', default=None)
     parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--eval_funcs', nargs='+', help='Which eval functions to use', default=['v1', 'v2'])
@@ -692,7 +726,7 @@ if __name__ == "__main__":
     # INIT
     # ----------------------
     args = parser.parse_args()
-    device = torch.device('cuda:0')
+    device = torch.device(args.device)
     args = get_class_splits(args)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -715,12 +749,7 @@ if __name__ == "__main__":
             model = vits.__dict__['vit_base']()
             torch.cuda.empty_cache()
 
-            state_dict = torch.load(pretrain_path, map_location='cpu')['teacher']
-            dict_keys=list(state_dict.keys())
-            for key in dict_keys:
-                newkey= key.replace("backbone.",'')
-                state_dict[newkey]=state_dict[key]
-                del state_dict[key]
+            state_dict = load_dino_backbone(pretrain_path)
             model.load_state_dict(state_dict)
         else:
             pretrain_path = dino_pretrain_path2
@@ -815,17 +844,16 @@ if __name__ == "__main__":
     train(projection_head, model, train_loader, test_loader_labelled, test_loader_unlabelled, merge_train_loader, args)
     torch.cuda.empty_cache()
     if args.report:
-        print("Reports for the best checkpoint:")
-        os.system("CUDA_VISIBLE_DEVICES="+str(args.gpu_id)+" python ../clustering/extract_features.py --dataset "+args.dataset_name+
-                  " --warmup_model_dir "+ args.model_path.replace('(','\(').replace(')','\)').replace('|','\|'))
-        os.system("CUDA_VISIBLE_DEVICES="+str(args.gpu_id)+" python ../clustering/k_means.py --dataset "+args.dataset_name+
-                  " --unbalanced "+str(int(args.unbalanced)))
-        print("Reports for the last checkpoint:")
-        os.system("CUDA_VISIBLE_DEVICES="+str(args.gpu_id)+" python ../clustering/extract_features.py --dataset "+args.dataset_name+
-                  " --warmup_model_dir "+ args.model_path.replace('(','\(').replace(')','\)').replace('|','\|')+
-                  "  --use_best_model 0")
-        os.system("CUDA_VISIBLE_DEVICES="+str(args.gpu_id)+" python ../clustering/k_means.py --dataset "+args.dataset_name+
-                  " --unbalanced "+str(int(args.unbalanced)))
+        import subprocess
+        for use_best in (True, False):
+            print('Reports for the best checkpoint:' if use_best else 'Reports for the last checkpoint:')
+            subprocess.run([sys.executable, '-m', 'methods.clustering.extract_features',
+                            '--dataset', args.dataset_name, '--warmup_model_dir', args.model_path,
+                            '--use_best_model', str(use_best)], check=True)
+            run_id = os.path.basename(args.log_dir)
+            subprocess.run([sys.executable, '-m', 'methods.clustering.k_means',
+                            '--dataset_name', args.dataset_name, '--warmup_model_exp_id', run_id,
+                            '--use_best_model', str(use_best), '--unbalanced', str(args.unbalanced)], check=True)
 
     torch.cuda.empty_cache()
     print(args.model_path)

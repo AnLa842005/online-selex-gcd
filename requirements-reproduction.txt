@@ -1,0 +1,3 @@
+# Install after requirements.txt, following the official editable-source workflow.
+numba==0.61.2
+-e git+https://github.com/subhadarship/kmeans_pytorch.git@f7f36bd1cb4e3a761d73d584866d0a9c6b4d2805#egg=kmeans_pytorch

@@ -1,5 +1,5 @@
 import sys
-sys.path.append('../../../SelEx/')
+from project_utils.reproduction import load_dino_backbone
 dino_v1 =True
 import torch
 from torch.utils.data import DataLoader
@@ -165,15 +165,10 @@ if __name__ == "__main__":
         args.num_unlabeled_classes = len(args.unlabeled_classes)
 
         if dino_v1:
-            model = torch.hub.load('facebookresearch/dino:main', 'dino_vitb16', pretrained=False)
+            model = vits.__dict__['vit_base']()
 
             pretrain_path = dino_pretrain_path
-            state_dict = torch.load(pretrain_path, map_location='cpu')['teacher']
-            dict_keys=list(state_dict.keys())
-            for key in dict_keys:
-                newkey= key.replace("backbone.",'')
-                state_dict[newkey]=state_dict[key]
-                del state_dict[key]
+            state_dict = load_dino_backbone(pretrain_path)
             model.load_state_dict(state_dict)
         else:
             pretrain_path = dino_pretrain_path2
@@ -203,7 +198,10 @@ if __name__ == "__main__":
         raise NotImplementedError
     if args.warmup_model_dir is not None:
 
-        warmup_id = args.warmup_model_dir.split('(')[1].split(')')[0]
+        warmup_id = os.path.basename(os.path.dirname(os.path.dirname(args.warmup_model_dir)))
+        args.save_dir += '_' + warmup_id
+        if args.use_best_model:
+            args.save_dir += '_best'
 
         if args.use_best_model:
             warmup_dir= args.warmup_model_dir[:-3]
