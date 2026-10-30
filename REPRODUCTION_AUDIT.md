@@ -4,7 +4,16 @@
 
 Source parity PASS within tested scope; numerical reproduction is NOT established. Branch baseline/reproduce-selex, HEAD 91baedd, upstream/base c3d3b42a0aa7d7c9ea748a8305a6890a34100f73 (remote main verified with git ls-remote). No training or algorithm edits performed. RunPod checkpoint bytes, command logs and event files were not available in this workspace; user-reported 200 epochs and scores are not independently verified.
 
-Most likely immediate explanation is a protocol/metric mismatch, not a demonstrated 18-point optimization failure. User reports Test 56.0062/56.6574/55.3608 versus paper 73.6/75.3/72.8 (gaps 17.5938/18.6426/17.4392 percentage points). Upstream explicitly identifies **Train ACC Unlabelled_v2 in final checkpoint reports** as its reported metric. The supplied name “Final Test ACC Unlabelled v2” is not an exact tag emitted by this source: establish its originating command before comparing.
+Observed RunPod results supplied by the user (checkpoint/log bytes not independently inspected):
+
+| Protocol / checkpoint | All (%) | Old (%) | New (%) |
+|---|---:|---:|---:|
+| Disjoint Test ACC v2 | 56.0062 | 56.6574 | 55.3608 |
+| Paper-comparable Train ACC Unlabelled_v2, final checkpoint | 61.5881 | 47.5650 | 68.6019 |
+| Paper reference | 73.6 | 75.3 | 72.8 |
+| Remaining paper-minus-final gap (percentage points) | 12.0119 | 27.7350 | 4.1981 |
+
+Protocol mismatch explains why the original Test comparison was inappropriate, but does NOT explain away the remaining reproduction gap. The paper-comparable final checkpoint is particularly weak on Old classes. Ordering sensitivity and checkpoint selection now take precedence over protocol mismatch as unresolved investigations. Best-checkpoint results remain unknown; no causal conclusion follows from the Old/New asymmetry alone.
 
 Source: https://github.com/SarahRastegar/SelEx (README Evaluation and order-bias NOTE). Repository does not establish whether the cited table uses final or best exclusively; it evaluates both. Do not infer table checkpoint choice from the word final.
 
@@ -12,7 +21,7 @@ Source: https://github.com/SarahRastegar/SelEx (README Evaluation and order-bias
 
 | Priority | Candidate | Evidence and confidence | Minimal isolation |
 |---|---|---|---|
-| P0 | Different evaluation population/algorithm | High: training Test uses disjoint test + unconstrained kmeans; final reports use semi-supervised training pool. training.py:418,422,652; k_means.py:69,94,103,197 | Evaluate existing final and best using commands below; compare SS-K-Means Train ACC Unlabelled_v2 |
+| P2 (resolved comparison) | Different evaluation population/algorithm | High: training Test uses disjoint test + unconstrained kmeans; final reports use semi-supervised training pool. training.py:418,422,652; k_means.py:69,94,103,197 | Evaluate existing final and best using commands below; compare SS-K-Means Train ACC Unlabelled_v2 |
 | P1 | Upstream ordering sensitivity | Upstream acknowledges it; CUB preserves metadata order and merged data puts labelled first. data/cub.py:49,55,110; data/data_utils.py:25; faster_mix_k_means_pytorch.py:202,245 | Cache features once; compare clustering with original and fixed shuffled order, preserving labels/masks/IDs and undo permutation. No training needed; this is diagnostic, not proposed baseline modification |
 | P1 | Wrong checkpoint or incomplete final report | RunPod artifacts not inspected; best differs from final and selected by v1 Old. training.py:444,449; cluster_and_log_utils.py:115 | Inspect epoch/best_epoch and hashes, preserve both reports and companion heads |
 | P1 | Actual run config/pretrain/backend differs from launcher | Repository config matches upstream defaults; server provenance unknown. reproduction.py:6; training.py:731,752; BASELINE_SETUP.md:49 | Export actual args, pip freeze, imported kmeans path/source hash and pretrained SHA256; compare without model execution |
@@ -107,3 +116,9 @@ False evaluates model.pt; True internally resolves model_best.pt. Do not pass mo
 ## Validation in this audit
 
 Six existing unittest tests passed, including upstream algorithm parity, finite loss/backward, CPU HSSK and checkpoint RNG roundtrip. Static config checker executed: no differences against literal upstream defaults for shared options. Compilation and git diff whitespace checks performed. No dataset download, full training, checkpoint evaluation or RunPod access performed. Only this report and scripts/compare_reproduction_config.py added.
+
+## Evaluation wrapper update
+
+Run `bash scripts/evaluate_cub_checkpoints.sh` with MODEL, SELEX_DATA_ROOT, SELEX_PRETRAINED_PATH and a new absolute SELEX_OUTPUT_ROOT exported. Optional SELEX_PYTHON selects the interpreter. The wrapper validates both backbone checkpoints, both projection-head companions, pretrained weights, CUB metadata and every listed image before starting. The duplicate label-head file is not required by feature extraction. It does not invoke training or download commands.
+
+Separate extract-final/best.log and evaluation-final/best.log files preserve both stages. summary.txt contains v2 percentages only; missing, ambiguous or invalid results fail explicitly. Upstream prints four decimal places in fractional accuracy, so extracted percentages have approximately 0.01-point precision; the wrapper cannot recover the extra precision of the observed figures above. results-final/best.txt retain upstream v1 output for provenance.
