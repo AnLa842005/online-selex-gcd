@@ -1,0 +1,27 @@
+{
+  "dataset": "CUB-200-2011",
+  "backbone": "DINOv1 ViT-B/16",
+  "seed": 1,
+  "epochs": 200,
+  "protocol": "standalone extract_features + semi-supervised K-Means",
+  "metric": "SS-K-Means Train ACC Unlabelled_v2",
+  "accuracy_unit": "percent",
+  "checkpoints": {
+    "final": {
+      "file": "model.pt",
+      "v1": {"All": 76.51, "Old": 78.32, "New": 75.61},
+      "v2": {"All": 73.95, "Old": 71.45, "New": 75.21},
+      "v2_minus_paper_pp": {"All": 0.35, "Old": -3.85, "New": 2.41}
+    },
+    "best": {
+      "file": "model_best.pt",
+      "v1": {"All": 72.02, "Old": 76.72, "New": 69.67},
+      "v2": {"All": 70.93, "Old": 73.72, "New": 69.54},
+      "v2_minus_paper_pp": {"All": -2.67, "Old": -1.58, "New": -3.26}
+    }
+  },
+  "paper_v2": {"All": 73.60, "Old": 75.30, "New": 72.80},
+  "verdict": "PASS WITH QUALIFICATION",
+  "provenance": "Values extracted from completed RunPod evaluation logs and supplied by the user.",
+  "completion_marker_observed": "EVALUATION_COMPLETE"
+}

@@ -27,7 +27,7 @@ class CustomCub2011(Dataset):
         self.train = train
 
 
-        if download:
+        if download and os.environ.get('SELEX_CUB_LOCAL_ONLY') != '1':
             self._download()
 
         if not self._check_integrity():

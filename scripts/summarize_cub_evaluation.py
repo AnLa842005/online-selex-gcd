@@ -5,10 +5,15 @@ from pathlib import Path
 
 
 def summarize(text, checkpoint):
-    matches = re.findall(r'SS-K-Means Train ACC Unlabelled_v2: All ([0-9.]+) \| Old ([0-9.]+) \| New ([0-9.]+)', text)
-    if len(matches) != 1:
+    metric = 'SS-K-Means Train ACC Unlabelled_v2'
+    if text.count(metric) != 1:
         raise ValueError('Expected exactly one final SS-K-Means v2 result')
-    values = [float(x) for x in matches[0]]
+    fields = text.split(metric, 1)[1].partition('\n')[0].strip()
+    number = r'(\d+(?:\.\d+)?)'
+    match = re.fullmatch(rf': All {number} \| Old {number} \| New {number}', fields)
+    if not match:
+        raise ValueError('Malformed SS-K-Means v2 result')
+    values = [float(x) for x in match.groups()]
     if not all(0 <= x <= 1 for x in values):
         raise ValueError('Expected fractional accuracies in [0, 1]')
     return checkpoint + '\t' + '\t'.join(f'{x * 100:.4f}' for x in values)

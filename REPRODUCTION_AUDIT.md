@@ -1,37 +1,32 @@
-# Reproduction audit — 2026-10-30
+# CUB reproduction audit — 2026-10-31
 
-## Verdict: PARTIAL
+## Verdict: PASS WITH QUALIFICATION
 
-Source parity PASS within tested scope; numerical reproduction is NOT established. Branch baseline/reproduce-selex, HEAD 91baedd, upstream/base c3d3b42a0aa7d7c9ea748a8305a6890a34100f73 (remote main verified with git ls-remote). No training or algorithm edits performed. RunPod checkpoint bytes, command logs and event files were not available in this workspace; user-reported 200 epochs and scores are not independently verified.
+Numerical reproduction is established for the paper's primary All-v2 metric. After 200 epochs on CUB-200-2011 with DINOv1 ViT-B/16 and seed 1, the final checkpoint scored **73.95%** versus **73.60%** in the paper (+0.35 percentage points). Exact split-level reproduction remains qualified. The Old/New allocation differs in a direction consistent with the upstream data-order sensitivity warning. Establishing causality requires an isolation experiment.
 
-Observed RunPod results supplied by the user (checkpoint/log bytes not independently inspected):
+The authoritative baseline is **73.95 / 71.45 / 75.21** (All/Old/New, percent). The source is the user-supplied extraction from the completed RunPod standalone Final Reports evaluation, with `EVALUATION_COMPLETE` observed. The raw logs and checkpoints were not independently inspected here.
 
-| Protocol / checkpoint | All (%) | Old (%) | New (%) |
-|---|---:|---:|---:|
-| Disjoint Test ACC v2 | 56.0062 | 56.6574 | 55.3608 |
-| Paper-comparable Train ACC Unlabelled_v2, final checkpoint | 61.5881 | 47.5650 | 68.6019 |
-| Paper reference | 73.6 | 75.3 | 72.8 |
-| Remaining paper-minus-final gap (percentage points) | 12.0119 | 27.7350 | 4.1981 |
+| Standalone SS-K-Means Train ACC Unlabelled_v2 | All (%) | Old (%) | New (%) | Difference from paper (All / Old / New, pp) |
+|---|---:|---:|---:|---|
+| Final, model.pt | 73.95 | 71.45 | 75.21 | +0.35 / -3.85 / +2.41 |
+| Best, model_best.pt | 70.93 | 73.72 | 69.54 | -2.67 / -1.58 / -3.26 |
+| Paper | 73.60 | 75.30 | 72.80 | — |
 
-Protocol mismatch explains why the original Test comparison was inappropriate, but does NOT explain away the remaining reproduction gap. The paper-comparable final checkpoint is particularly weak on Old classes. Ordering sensitivity and checkpoint selection now take precedence over protocol mismatch as unresolved investigations. Best-checkpoint results remain unknown; no causal conclusion follows from the Old/New asymmetry alone.
-
-Source: https://github.com/SarahRastegar/SelEx (README Evaluation and order-bias NOTE). Repository does not establish whether the cited table uses final or best exclusively; it evaluates both. Do not infer table checkpoint choice from the word final.
+The final checkpoint outperforms the best checkpoint on standalone All-v2. Best-checkpoint selection maximizes disjoint Test Old-v1, so it need not maximize standalone Train Unlabelled-v2. The standalone scores use extracted features and semi-supervised K-Means with labelled training anchors. The earlier **61.5881 / 47.5650 / 68.6019** is an in-training TensorBoard Train ACC Unlabelled-v2 event. The disjoint Test ACC-v2 result of **56.0062 / 56.6574 / 55.3608** evaluates the held-out test population using unconstrained K-Means. Only the standalone v2 rows above are used for the paper comparison.
 
 ## Ranked investigations
 
-| Priority | Candidate | Evidence and confidence | Minimal isolation |
-|---|---|---|---|
-| P2 (resolved comparison) | Different evaluation population/algorithm | High: training Test uses disjoint test + unconstrained kmeans; final reports use semi-supervised training pool. training.py:418,422,652; k_means.py:69,94,103,197 | Evaluate existing final and best using commands below; compare SS-K-Means Train ACC Unlabelled_v2 |
-| P1 | Upstream ordering sensitivity | Upstream acknowledges it; CUB preserves metadata order and merged data puts labelled first. data/cub.py:49,55,110; data/data_utils.py:25; faster_mix_k_means_pytorch.py:202,245 | Cache features once; compare clustering with original and fixed shuffled order, preserving labels/masks/IDs and undo permutation. No training needed; this is diagnostic, not proposed baseline modification |
-| P1 | Wrong checkpoint or incomplete final report | RunPod artifacts not inspected; best differs from final and selected by v1 Old. training.py:444,449; cluster_and_log_utils.py:115 | Inspect epoch/best_epoch and hashes, preserve both reports and companion heads |
-| P1 | Actual run config/pretrain/backend differs from launcher | Repository config matches upstream defaults; server provenance unknown. reproduction.py:6; training.py:731,752; BASELINE_SETUP.md:49 | Export actual args, pip freeze, imported kmeans path/source hash and pretrained SHA256; compare without model execution |
-| P2 | Resume/RNG discontinuity | State restoration exists, but end-to-end GPU trajectory not tested. reproduction.py:22,33; training.py:238 | If resume occurred, compare saved states and a short isolated continuation against uninterrupted execution only after evaluation mismatch is resolved |
-
-No additional seeds proposed before these checks explain the gap.
+| Status | Investigation | Evidence or next step |
+|---|---|---|
+| Resolved | Protocol mismatch | Compare the standalone Train Unlabelled-v2 report with the paper. |
+| Resolved | Checkpoint evaluation | Both checkpoints have completed standalone reports. The upstream README evaluates both and does not identify which produced its table. |
+| Non-blocking follow-up | Data-order sensitivity | Compare original and fixed shuffled order on cached features, preserving labels, masks and IDs and reversing the permutation for scoring. [Upstream order warning](https://github.com/SarahRastegar/SelEx#readme) |
+| Reproducibility note | Run provenance and config | Archive actual arguments, environment, pretrained and checkpoint hashes, and imported K-Means source revision when available. Repository defaults alone cannot certify the server configuration. |
+| Optional robustness work | Additional training seeds | Estimate run-to-run variation. Baseline acceptance does not require these runs. |
 
 ## Full diff classification
 
-Reproduce exact diff: `git diff c3d3b42a0aa7d7c9ea748a8305a6890a34100f73 HEAD` (42 files, 923 insertions, 42 deletions, including removed tracked bytecode).
+Earlier source-parity audit diff: `git diff c3d3b42a0aa7d7c9ea748a8305a6890a34100f73 91baedd` (42 files, 923 insertions, 42 deletions, including removed tracked bytecode).
 
 Potential numerical effects, including conditional effects:
 - config.py:8,20,26: environment-based data, split, pretrained and output paths. Portability; different resolved assets can change results.
@@ -93,32 +88,6 @@ Test ACC_v1_Old stopping at 121: no source branch supports selective stop; v1 an
 
 requirements.txt already pins torch 2.0.0, sklearn 1.3.0, timm 0.9.10, torchvision 0.15.1. Therefore these versions are not evidence of fork drift. environment.yml conflicts (Python3.7/torch1.8.1/CUDA10.2/sklearn0.21.3/timm0.4.12); no proof which produced the paper table. Python3.10, cu117 and A40 have no measured significant effect here; do not rank them as causes. kmeans-pytorch is explicitly required by README and imported for periodic evaluation; custom HSSK is separate. Pinned editable revision f7f36bd1cb4e3a761d73d584866d0a9c6b4d2805 must be checked against actual imported server source, not only pip version 0.3.0. Backend substitution has plausible impact but is not established on this run.
 
-## Evaluation commands for later (Linux / existing dataset only)
+## Repeat the standalone evaluation
 
-Run from repository with its environment and correct SELEX_DATA_ROOT / SELEX_PRETRAINED_PATH. Keep outputs in a fresh directory; commands write extracted features and results but perform no training. Verify dataset metadata/images exist first: existing loaders can attempt download when missing. MODEL must be the original .../<run-id>/checkpoints/model.pt, with model_proj_head.pt, model_best.pt and model_proj_head_best.pt beside it.
-
-```bash
-export MODEL='/absolute/run/log/<run-id>/checkpoints/model.pt'
-export SELEX_OUTPUT_ROOT='/absolute/new-evaluation-output'
-export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
-RUN_ID="$(basename "$(dirname "$(dirname "$MODEL")")")"
-mkdir -p "$SELEX_OUTPUT_ROOT"
-cd "$SELEX_OUTPUT_ROOT"
-for BEST in False True; do
-  python -m methods.clustering.extract_features --dataset cub --model_name vit_dino --warmup_model_dir "$MODEL" --use_best_model "$BEST" --use_ssb_splits True
-  python -m methods.clustering.k_means --dataset_name cub --model_name vit_dino --warmup_model_exp_id "$RUN_ID" --use_best_model "$BEST" --use_ssb_splits True --prop_train_labels 0.5 --unbalanced False --eval_funcs v1 v2 --silent False > "evaluation-$BEST.log" 2>&1
-  cp results.txt "results-$BEST.txt"
-done
-```
-
-False evaluates model.pt; True internally resolves model_best.pt. Do not pass model_best.pt as MODEL (would append _best again). Read v2 from logs; results.txt records FIRST eval function, v1.
-
-## Validation in this audit
-
-Six existing unittest tests passed, including upstream algorithm parity, finite loss/backward, CPU HSSK and checkpoint RNG roundtrip. Static config checker executed: no differences against literal upstream defaults for shared options. Compilation and git diff whitespace checks performed. No dataset download, full training, checkpoint evaluation or RunPod access performed. Only this report and scripts/compare_reproduction_config.py added.
-
-## Evaluation wrapper update
-
-Run `bash scripts/evaluate_cub_checkpoints.sh` with MODEL, SELEX_DATA_ROOT, SELEX_PRETRAINED_PATH and a new absolute SELEX_OUTPUT_ROOT exported. Optional SELEX_PYTHON selects the interpreter. The wrapper validates both backbone checkpoints, both projection-head companions, pretrained weights, CUB metadata and every listed image before starting. The duplicate label-head file is not required by feature extraction. It does not invoke training or download commands.
-
-Separate extract-final/best.log and evaluation-final/best.log files preserve both stages. summary.txt contains v2 percentages only; missing, ambiguous or invalid results fail explicitly. Upstream prints four decimal places in fractional accuracy, so extracted percentages have approximately 0.01-point precision; the wrapper cannot recover the extra precision of the observed figures above. results-final/best.txt retain upstream v1 output for provenance.
+Follow the [one-command checkpoint workflow](BASELINE_SETUP.md#standalone-checkpoint-evaluation). The default wrapper preflight checks checkpoints, directories and metadata. Set `SELEX_VERIFY_ALL_IMAGES=1` to check every listed image before extraction. Use the final row of `summary.txt` for the baseline. The [tracked record](results/cub_dinov1_seed1.json) includes both v1 and v2 for each checkpoint.

@@ -190,6 +190,22 @@ reference targets under the paper/README's unlabelled v2 protocol, not results
 obtained here. Do not compare this DINOv1 run with the DINOv2 row. The upstream
 order-bias warning applies to attempts to reproduce these numbers.
 
+### Standalone checkpoint evaluation
+
+With the existing assets and evaluation environment on Linux, export the four required paths and run the wrapper from the repository root.
+
+```bash
+export MODEL=/absolute/run/log/RUN_ID/checkpoints/model.pt
+export SELEX_DATA_ROOT=/absolute/datasets
+export SELEX_PRETRAINED_PATH=/absolute/pretrained/dino_vitbase16_pretrain.pth
+export SELEX_OUTPUT_ROOT=/absolute/new-evaluation-output
+bash scripts/evaluate_cub_checkpoints.sh
+```
+
+Replace the example paths (including `RUN_ID`) before running. **SELEX_OUTPUT_ROOT must be a new absolute path** to prevent stale feature reuse. Set `SELEX_PYTHON` to select a different interpreter if needed. The fast preflight checks both backbones (`model.pt`, `model_best.pt`), their companion heads (`model_proj_head.pt`, `model_proj_head_best.pt`), DINO weights, the CUB_200_2011 root and images directories, and four metadata files (`images.txt`, `image_class_labels.txt`, `train_test_split.txt`, `attributes/image_attribute_labels.txt`). Only `SELEX_VERIFY_ALL_IMAGES=1` adds a preflight stat of each image in `images.txt`. The loader retains its own integrity checks during evaluation. The wrapper disables dataset download and archive repair.
+
+Under `SELEX_OUTPUT_ROOT`, `extract-{final,best}.log` and `evaluation-{final,best}.log` capture each stage. Compare the final row in `summary.txt` (standalone SS-K-Means Train ACC Unlabelled_v2, percent) with the paper. The seed-1 final checkpoint reproduced **73.95 / 71.45 / 75.21** for All/Old/New, versus **73.60 / 75.30 / 72.80** in the paper. The best checkpoint scored **70.93 / 73.72 / 69.54**. Files `results-{final,best}.txt` preserve the first evaluation function (v1) for provenance.
+
 ## Differences from upstream
 
 No algorithmic changes. HSSK assignments, hierarchy, USE, SSE, total-loss formula,
