@@ -6,6 +6,10 @@
 > for deterministic metadata streams and CPU-only validation. Online SelEx is not
 > yet implemented or evaluated; the reproduced offline algorithm is unchanged.
 
+> Phase 2: [synthetic cosine prototype baseline](docs/SYNTHETIC_PROTOTYPE_BASELINE.md)
+> provides CPU-only lifecycle, state and metric validation. It uses no SelEx
+> checkpoint or CUB features; synthetic scores are not research results.
+
 # SelEx: Self-Expertise in Fine-Grained Generalized Category Discovery
 
 

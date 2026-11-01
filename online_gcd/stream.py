@@ -63,14 +63,14 @@ class ProtocolConfig:
         return cls(**values)
 
 
-def load_config(path):
+def load_config(path, config_type=ProtocolConfig):
     """PyYAML is needed only for loading the tracked configuration."""
     import yaml
     try:
         values = yaml.safe_load(Path(path).read_text(encoding='utf-8'))
     except yaml.YAMLError as exc:
         raise ValueError(f'invalid YAML configuration: {exc}') from exc
-    return ProtocolConfig.from_dict(values)
+    return config_type.from_dict(values)
 
 
 def validate_class_split(known_classes, novel_classes, config, *, expected_cub=False):

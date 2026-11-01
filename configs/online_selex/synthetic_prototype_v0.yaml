@@ -1,0 +1,16 @@
+# Privileged experiment configuration, never supplied wholesale to the learner.
+baseline_version: euclidean-prototype-v0
+dataset: synthetic
+# Reuses Phase 1 scheduling/allocation semantics, not its CUB dataset or base model.
+protocol_name: online-selex-cub-v0
+seed: 1
+feature_dim: 32
+num_known_classes: 3
+num_novel_classes: 10
+num_online_sessions: 5
+base_samples_per_class: 20
+samples_per_class: 30
+probe_samples_per_class: 12
+noise_std: 0.025
+threshold: 0.85
+momentum: 0.9

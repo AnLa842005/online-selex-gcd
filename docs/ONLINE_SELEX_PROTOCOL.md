@@ -1,5 +1,12 @@
 # Online SelEx Phase 1: online-selex-cub-v0
 
+This document records the Phase 1 protocol. The implemented
+[Phase 2 synthetic baseline](SYNTHETIC_PROTOTYPE_BASELINE.md) reuses its scheduling
+rules but uses synthetic known-only base features, never the offline checkpoint.
+Full offline SelEx is an upper-bound reference or warm-start ablation only,
+not clean online initialization. Phase 2 also specifies arrival-time stream
+predictions and both signed/clipped forgetting explicitly.
+
 Status: protocol and metadata stream infrastructure only. Online SelEx has **not**
 been implemented or evaluated. No model, training, feature extraction, replay,
 prototype learning, hyperbolic mapping, new losses or GPU evaluation is included.
