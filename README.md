@@ -2,6 +2,10 @@
 > for Windows smoke testing, Linux GPU training, exact upstream provenance,
 > environment variables, and known upstream limitations. Original attribution follows.
 
+> Online research Phase 1: see [the protocol and commands](docs/ONLINE_SELEX_PROTOCOL.md)
+> for deterministic metadata streams and CPU-only validation. Online SelEx is not
+> yet implemented or evaluated; the reproduced offline algorithm is unchanged.
+
 # SelEx: Self-Expertise in Fine-Grained Generalized Category Discovery
 
 

@@ -1,0 +1,19 @@
+# Builder/evaluator configuration. Never supply this file to the online learner.
+# Phase 1 stream construction defaults; not a trained Online SelEx method.
+protocol_name: online-selex-cub-v0
+dataset: CUB-200-2011
+use_ssb_splits: true
+seed: 1
+num_known_classes: 100
+num_novel_classes: 100
+num_online_sessions: 5
+novel_classes_per_session: 20
+known_classes_present_each_session: true
+allow_seen_novel_reappearance: true
+reveal_total_novel_class_count: false
+sample_ordering: deterministic_seeded_shuffle
+sample_allocation: round_robin
+memory_budget: 0
+encoder_update: frozen
+replay_enabled: false
+expose_labelled_known_membership: false
