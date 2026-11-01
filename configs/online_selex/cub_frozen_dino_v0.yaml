@@ -1,0 +1,29 @@
+protocol_version: online-selex-cub-frozen-dino-v0
+dataset: CUB-200-2011
+class_split: existing_SSB_100_100
+labelled_subset: global_known_train_50pct_numpy_randomstate0
+seed: 1
+num_online_sessions: 5
+backbone: DINOv1_ViT_B_16
+checkpoint_role: official_imagenet_pretrained_backbone
+checkpoint_sha256: bf34ad0f424b9029b593e8dc3ed553bf26e88bcba0d32bf3e62a6209cb64c85e
+feature_layer: final_layernorm_CLS
+feature_dim: 768
+preprocessing:
+  image_mode: RGB
+  resize_shorter_side: 256
+  center_crop: 224
+  interpolation: PIL_bicubic
+  tensor_scale: uint8_to_float32_0_1
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+feature_normalization: L2_float32
+threshold_calibration: known_only_loo_balanced_accuracy_v0
+ema_momentum: 0.9
+replay_enabled: false
+encoder_update: frozen
+memory_budget: zero_replay_unbounded_prototypes_logged
+cluster_merge: false
+cluster_split: false
+cluster_delete: false
+# CUB_ROOT, DINO_PRETRAINED_PATH, ONLINE_SELEX_OUTPUT_ROOT and device are CLI/env inputs.

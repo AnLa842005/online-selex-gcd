@@ -10,6 +10,9 @@
 > provides CPU-only lifecycle, state and metric validation. It uses no SelEx
 > checkpoint or CUB features; synthetic scores are not research results.
 
+> Phase 3A: [clean frozen-DINO CUB pipeline and lab runbook](docs/CUB_FROZEN_DINO_BASELINE.md).
+> Infrastructure is validated with fixtures; real feature extraction/evaluation is NOT RUN.
+
 # SelEx: Self-Expertise in Fine-Grained Generalized Category Discovery
 
 

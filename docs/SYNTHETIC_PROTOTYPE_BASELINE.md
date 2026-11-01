@@ -1,5 +1,9 @@
 # Phase 2: synthetic cosine prototype baseline
 
+The next infrastructure phase is documented in the
+[clean frozen-DINO CUB runbook](CUB_FROZEN_DINO_BASELINE.md). It fixes real-data
+partitions and known-only threshold calibration; real CUB execution is NOT RUN.
+
 Version: **euclidean-prototype-v0**. This is infrastructure validation, **not a
 research result**. Synthetic performance must not be compared with SelEx paper
 results. The full SelEx checkpoint is not loaded or used. No CUB images, CUB
