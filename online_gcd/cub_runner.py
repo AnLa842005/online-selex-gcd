@@ -19,15 +19,16 @@ from online_gcd.stream import EvaluationRecord
 from online_gcd.synthetic import LabelledEmbedding
 
 
-def run_cub_baseline(manifests, cache, config, *, calibration_record=None, allow_fixture=False, blas_threads=1, progress=print):
+def run_cub_baseline(manifests, cache, config, *, calibration_record=None, allow_fixture=False, blas_threads=1, progress=print, consolidation=None):
     integer(blas_threads, 'blas_threads', 1)
     # Configurable: tiny GEMV calls often lose time launching many BLAS workers.
-    with threadpool_limits(limits=blas_threads, user_api='blas'):
+    effective_threads = 1 if consolidation is not None and consolidation.enabled else blas_threads
+    with threadpool_limits(limits=effective_threads, user_api='blas'):
         return _run_cub_baseline(manifests, cache, config, calibration_record=calibration_record,
-                                 allow_fixture=allow_fixture, blas_threads=blas_threads, progress=progress)
+                                 allow_fixture=allow_fixture, blas_threads=blas_threads, progress=progress, consolidation=consolidation)
 
 
-def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fixture, blas_threads, progress):
+def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fixture, blas_threads, progress, consolidation):
     def log(message):
         if progress is not None:
             progress(message)
@@ -51,13 +52,27 @@ def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fix
         if calibration_record != calibration:
             raise ValueError('calibration does not match known base features, cache or deterministic objective')
     log(f'Threshold calibration end: threshold={calibration["threshold"]:.17g} elapsed={time.perf_counter() - calibration_started:.3f}s')
+    if consolidation is not None and consolidation.enabled:
+        from online_gcd.consolidation import ConsolidatingBank, EXPERIMENT
+        from online_gcd.consolidation_calibration import calibrate_consolidation
+        from online_gcd.consolidation_evaluator import ConsolidationEvaluator
+        log('Consolidation calibration start (labelled known base only)')
+        merge_started = time.perf_counter()
+        merge_calibration = calibrate_consolidation(groups, base_identity=bundle['base']['checksum'],
+                                                   cache_identity=provenance['checksum'])
+        merge_calibration_seconds = time.perf_counter() - merge_started
+        log(f'Consolidation calibration end: threshold={merge_calibration["threshold"]:.17g} elapsed={merge_calibration_seconds:.3f}s')
+        bank = ConsolidatingBank(768, calibration['threshold'], 0.9, merge_calibration['threshold'], consolidation.block_size)
+        evaluator_class = ConsolidationEvaluator
+    else:
+        bank = PrototypeBank(768, threshold=calibration['threshold'], momentum=0.9)
+        evaluator_class = OnlineEvaluator
     log('Known prototype initialization start')
-    bank = PrototypeBank(768, threshold=calibration['threshold'], momentum=0.9)
     bank.initialize_known(groups)
     log(f'Known prototype initialization end: prototypes={len(bank.prototypes)}')
     probes = tuple(LabelledEmbedding(r['sample_id'], r['class_id'], features[r['feature_row']])
                    for r in bundle['probe_evaluator']['records'])
-    evaluator = OnlineEvaluator(p['known_classes'], p['class_introduction_schedule'], probes)
+    evaluator = evaluator_class(p['known_classes'], p['class_introduction_schedule'], probes)
     evaluator.progress = log
     base_probe = evaluator.evaluate_base(bank)
     sessions = []
@@ -110,5 +125,22 @@ def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fix
                               'memory_note': 'tracemalloc peak includes evaluator; excludes untraced native/RSS memory'},
               'versions': {'python': platform.python_version(), 'numpy': np.__version__,
                            'scipy': scipy.__version__, 'scikit_learn': sklearn.__version__}}
+    if consolidation is not None and consolidation.enabled:
+        result.update(experiment=EXPERIMENT, control_ablation=True,
+                      input_kind=provenance['extraction']['kind'],
+                      assignment_threshold=bank.threshold, consolidation_threshold=bank.consolidation_threshold,
+                      consolidation_calibration=merge_calibration,
+                      consolidation_calibration_seconds=merge_calibration_seconds)
+        result['performance'].update(blas_threads=1, requested_blas_threads=blas_threads)
+        result['consolidation_policy'] = {'enabled': True, 'block_size': consolidation.block_size,
+                                          'implementation': 'blockwise_row_best_v0',
+                                          'scope': 'novel_to_novel_only',
+                                          'pair_age': 'earliest_member_creation_session',
+                                          'probe_mapping': 'survivor_mapping_then_lexical_retired_mapping'}
+        result['summary'].update(retired_cluster_count=len(bank.aliases),
+                                 ever_created_novel_cluster_count=bank._next_novel_id - 1,
+                                 maximum_merge_chain_depth=bank.max_merge_chain_depth(),
+                                 raw_historical_fragmentation=final['raw_historical_fragmentation'],
+                                 active_probe_fragmentation=final['active_probe_fragmentation'])
     del features
     return result, bank

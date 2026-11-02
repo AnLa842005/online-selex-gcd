@@ -46,3 +46,32 @@ def fixture_cache(root):
     features /= np.linalg.norm(features, axis=1, keepdims=True)
     provenance = write_cache(cache, bundle, [features[:100], features[100:]], {'kind': 'fixture'})
     return bundle, manifests, cache, features, provenance
+
+
+def overfragmented_fixture_cache(root):
+    """Artificial geometry: noisy known halves, two tight novel modes per class.
+
+    Labels are used only by this privileged fixture builder. The learner gets
+    ordinary label-free feature rows through the same production runner API.
+    """
+    from online_gcd.artifacts import digest
+    root = Path(root)
+    bundle = fixture_bundle(root)
+    manifests, cache = root / 'manifests', root / 'cache'
+    save_bundle(bundle, manifests)
+    features = np.zeros((len(bundle['partition']['source_records']), 768), dtype=np.float32)
+    rows = {sid: i for i, sid in enumerate(bundle['partition']['feature_sample_ids'])}
+    known = set(bundle['partition']['known_classes'])
+    for record in bundle['partition']['source_records']:
+        sid = 'cub-' + digest(['CUB-200-2011', record['image_id']])
+        c = record['class_id']
+        features[rows[sid], c] = 1.
+        if c not in known and record['official_split'] == 'train':
+            features[rows[sid], 720 + c] = (-1 if record['image_id'] % 2 else 1) * np.tan(np.deg2rad(10))
+    for c in known:
+        base = [r for r in bundle['base']['records'] if r['known_class_id'] == c]
+        for i, row in enumerate(base):
+            features[row['feature_row'], 720 + c] = (-1 if i < len(base) // 2 else 1) * np.tan(np.deg2rad(15))
+    features /= np.linalg.norm(features, axis=1, keepdims=True)
+    provenance = write_cache(cache, bundle, [features], {'kind': 'fixture'})
+    return bundle, manifests, cache, features, provenance

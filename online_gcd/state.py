@@ -10,6 +10,9 @@ from online_gcd.prototype_bank import BASELINE_VERSION, Prototype, PrototypeBank
 
 
 def state_dict(bank):
+    if getattr(bank, 'consolidation_enabled', False):
+        from online_gcd.consolidation_state import consolidation_state_dict
+        return consolidation_state_dict(bank)
     return {
         'schema_version': 1, 'baseline_version': BASELINE_VERSION,
         'feature_dim': bank.feature_dim, 'threshold': bank.threshold, 'momentum': bank.momentum,
@@ -42,6 +45,13 @@ def _reject_constant(value):
 
 
 def bank_from_state(data, expected_feature_dim=None):
+    if isinstance(data, dict) and data.get('schema_version') == 2:
+        from online_gcd.consolidation_state import consolidation_bank_from_state
+        return consolidation_bank_from_state(data, expected_feature_dim)
+    return _baseline_bank_from_state(data, expected_feature_dim)
+
+
+def _baseline_bank_from_state(data, expected_feature_dim=None, *, retired_ids=()):
     fields = {'schema_version', 'baseline_version', 'feature_dim', 'threshold', 'momentum',
               'next_novel_id', 'last_session', 'prototypes'}
     if not isinstance(data, dict) or set(data) != fields:
@@ -92,6 +102,7 @@ def bank_from_state(data, expected_feature_dim=None):
         bank._prototypes[cid] = Prototype(cid, tuple(values), count, known, creation, updated)
     if not any(p.originated_known for p in bank.prototypes):
         raise ValueError('state requires labelled known prototypes')
+    novel_numbers.update(int(cid[6:]) for cid in retired_ids)
     if novel_numbers != set(range(1, len(novel_numbers) + 1)) or next_id != len(novel_numbers) + 1:
         raise ValueError('next_novel_id disagrees with the undeleted cluster history')
     if max(p.last_updated_session for p in bank.prototypes) != last:

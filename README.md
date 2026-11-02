@@ -14,6 +14,10 @@
 > Phase 3B: [first clean Online GCD result and Phase 3C hardening](docs/CUB_FROZEN_DINO_PHASE3B_REPORT.md).
 > RunPod results are recorded from the supplied console record; Phase 3C validation uses fixtures only.
 
+> Phase 4A: [novel-prototype consolidation control](docs/NOVEL_PROTOTYPE_CONSOLIDATION.md)
+> is opt-in, CPU-only and validated on synthetic/fake-cache inputs. It is not Online SelEx.
+> See the [research roadmap](docs/RESEARCH_ROADMAP.md) for Phase 4B Euclidean and Phase 5 hyperbolic work.
+
 # SelEx: Self-Expertise in Fine-Grained Generalized Category Discovery
 
 

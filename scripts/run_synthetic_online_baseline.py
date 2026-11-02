@@ -21,8 +21,12 @@ def main():
     parser.add_argument('--seed', type=int)
     parser.add_argument('--output-json', type=Path)
     parser.add_argument('--save-state', type=Path)
+    parser.add_argument('--consolidate-novel', action='store_true', help='Opt-in control ablation; not Online SelEx')
+    parser.add_argument('--consolidation-block-size', type=int, default=256)
     args = parser.parse_args()
     try:
+        from online_gcd.consolidation import ConsolidationOptions
+        consolidation = ConsolidationOptions(args.consolidate_novel, args.consolidation_block_size)
         config = load_config(args.config, SyntheticConfig)
         if args.seed is not None:
             config = replace(config, seed=args.seed)
@@ -32,8 +36,12 @@ def main():
         for path in outputs:
             if path.exists() or not path.parent.is_dir():
                 raise ValueError(f'output must be a new file in an existing directory: {path}')
-        result, bank = run_experiment(config)
-        print(f'{config.baseline_version} | synthetic only | CPU | seed={config.seed}')
+        result, bank = run_experiment(config, consolidation=consolidation,
+                                      progress=(lambda message: print(message, flush=True)) if consolidation.enabled else None)
+        print(f'{result.get("experiment", config.baseline_version)} | synthetic only | CPU | seed={config.seed}')
+        if consolidation.enabled:
+            print('Control ablation: raw stream scores; consolidated probes; not Online SelEx')
+            print(f'Assignment threshold={bank.threshold:.17g}; consolidation threshold={bank.consolidation_threshold:.17g}')
         print('Session  All     Old     New     CumAll  Probe   Clusters  Novel  Forget')
         for row in result['sessions']:
             local = row['session_local']['hungarian_accuracy']
@@ -45,6 +53,9 @@ def main():
             print(f"{row['session_id']:7}  " + '  '.join(f'{percent(v):>6}' for v in values)
                   + f"  {row['active_prototype_count']:8}  {row['discovered_novel_cluster_count']:5}  "
                   + percent(row['probe']['average_forgetting']))
+            if consolidation.enabled:
+                print(f'  Novel {row["novel_prototypes_before"]} -> {row["novel_prototypes_after"]}; '
+                      f'merges={row["merge_count"]}; consolidation={row["consolidation_time_seconds"]:.3f}s')
         print('Summary (accuracy fractions):')
         print(json.dumps(result['summary'], sort_keys=True, indent=2, allow_nan=False))
         print('Infrastructure validation only; not comparable to SelEx paper results.')

@@ -32,6 +32,12 @@ class OnlineEvaluator:
         self.last_timing = {}
         self.progress = None
 
+    def _before_session_probe(self, bank, session_id):
+        """Optional ablation hook, called only after raw stream metrics exist."""
+
+    def _probe_extras(self, labels, predictions):
+        return {}
+
     def _probe(self, bank, session_id):
         eligible = self.known | {c for c, t in self.introduction.items() if t <= session_id}
         records = [p for p in self.probes if p.class_id in eligible]
@@ -62,7 +68,8 @@ class OnlineEvaluator:
                 'average_forgetting_clipped': float(np.mean(np.maximum(forgetting, 0))) if forgetting else None,
                 'forgetting_class_count': len(forgetting),
                 'identity_churn': float(np.mean(churn)) if churn else None,
-                'eligible_class_count': len(eligible)}
+                'eligible_class_count': len(eligible),
+                **self._probe_extras(labels, predictions)}
 
     def evaluate_base(self, bank):
         if self._last_session is not None or bank.last_session != 0:
@@ -107,11 +114,14 @@ class OnlineEvaluator:
             'cumulative': clustering_report(self._labels, self._predictions, self.known),
             'cumulative_fixed_mapping_accuracy': accuracy_slices(
                 self._labels, self._predictions, self.known, self.mapping),
+        }
+        self._before_session_probe(bank, session_id)
+        report.update({
             'probe': self._probe(bank, session_id),
             'active_prototype_count': len(bank.prototypes),
             'known_prototype_count': sum(p.originated_known for p in bank.prototypes),
             'discovered_novel_cluster_count': sum(not p.originated_known for p in bank.prototypes),
-        }
+        })
         self.last_timing['metric_computation_seconds'] = (time.perf_counter() - evaluation_started
                                                          - self.last_timing['probe_evaluation_seconds'])
         self._last_session = session_id
