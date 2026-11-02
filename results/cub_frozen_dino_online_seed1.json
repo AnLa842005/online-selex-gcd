@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "record_kind": "user_supplied_phase3b_console_transcription",
+  "experiment": "frozen_DINO_clean_online",
+  "seed": 1,
+  "protocol": "online-selex-cub-frozen-dino-v0",
+  "provenance": {
+    "source": "Authoritative Phase 3B console values supplied by user for Phase 3C; raw RunPod artifacts not supplied",
+    "implementation_start_commit": "85a9bca86a89d97f07b97d9dbec6874ca7543286",
+    "run_commit": null,
+    "timestamp_utc": null,
+    "full_offline_selex_checkpoint_used": false,
+    "cub_specific_backbone_training": false,
+    "novel_stream_backbone_exposure": false
+  },
+  "environment": {
+    "platform": "RunPod",
+    "python": "3.12",
+    "torch": "2.8.0+cu128",
+    "torchvision": "0.23.0+cu128",
+    "gpu": "NVIDIA RTX PRO 4000 Blackwell",
+    "gpu_memory_gb": 24
+  },
+  "dataset": "CUB-200-2011",
+  "population": {
+    "base": 1498,
+    "stream": 4496,
+    "probe": 5794,
+    "known_classes": 100,
+    "novel_classes": 100
+  },
+  "backbone": {
+    "architecture": "DINOv1 ViT-B/16",
+    "checkpoint_role": "backbone_only",
+    "checkpoint_sha256": "bf34ad0f424b9029b593e8dc3ed553bf26e88bcba0d32bf3e62a6209cb64c85e"
+  },
+  "cache_checksum": "c575eda6f7914828a8a77b032581d427da006982742f6b92d1f6cfe956434d3f",
+  "extraction": {
+    "completed_images": 11788,
+    "expected_images": 11788,
+    "exit_code": 0
+  },
+  "baseline_exit_code": 0,
+  "calibration": {
+    "status": "pending_import",
+    "threshold": null,
+    "reason": "Exact selected threshold absent from supplied console record; import persisted RunPod calibration.json"
+  },
+  "sessions": [
+    {
+      "session_id": 1,
+      "accuracy_percent_rounded": {
+        "all": 46.64,
+        "old": 54.84,
+        "new": 23.33
+      },
+      "active_prototype_count": 315,
+      "processing_seconds": 3.097560290945694
+    },
+    {
+      "session_id": 2,
+      "accuracy_percent_rounded": {
+        "all": 41.36,
+        "old": 48.76,
+        "new": 32.86
+      },
+      "active_prototype_count": 597,
+      "processing_seconds": 8.515799070941284
+    },
+    {
+      "session_id": 3,
+      "accuracy_percent_rounded": {
+        "all": 36.33,
+        "old": 47.49,
+        "new": 29.38
+      },
+      "active_prototype_count": 938,
+      "processing_seconds": 18.227227735798806
+    },
+    {
+      "session_id": 4,
+      "accuracy_percent_rounded": {
+        "all": 31.15,
+        "old": 44.04,
+        "new": 26.45
+      },
+      "active_prototype_count": 1375,
+      "processing_seconds": 36.412236660020426
+    },
+    {
+      "session_id": 5,
+      "accuracy_percent_rounded": {
+        "all": 29.13,
+        "old": 41.54,
+        "new": 26.75
+      },
+      "active_prototype_count": 2067,
+      "processing_seconds": 85.15443701297045
+    }
+  ],
+  "summary": {
+    "final_session_accuracy": {
+      "all": {
+        "value": 0.2912801484230056,
+        "count": 1617
+      },
+      "old": {
+        "value": 0.4153846153846154,
+        "count": 260
+      },
+      "new": {
+        "value": 0.2675018422991894,
+        "count": 1357
+      }
+    },
+    "average_online_accuracy": 0.36920810510124125,
+    "cumulative_accuracy": {
+      "all": {
+        "value": 0.23309608540925267,
+        "count": 4496
+      },
+      "old": {
+        "value": 0.30820547031354234,
+        "count": 1499
+      },
+      "new": {
+        "value": 0.19552886219552887,
+        "count": 2997
+      }
+    },
+    "probe_accuracy": {
+      "all": {
+        "value": 0.19295823265447015,
+        "count": 5794
+      },
+      "old": {
+        "value": 0.36234396671289876,
+        "count": 2884
+      },
+      "new": {
+        "value": 0.025085910652920963,
+        "count": 2910
+      }
+    },
+    "average_forgetting": 0.06604838911435613,
+    "active_prototype_count": 2067,
+    "discovered_novel_cluster_count": 1967
+  },
+  "limitations": [
+    "First clean Online GCD baseline; severe over-fragmentation of 100 novel classes into 1967 clusters.",
+    "Probe New accuracy is only 2.51%.",
+    "Processing time grows rapidly with prototype count; these are pre-optimization times.",
+    "Do not directly compare with offline SelEx 73.95%: protocols and training exposure differ.",
+    "Per-session console percentages are rounded; do not reconstruct missing exact scores or counts.",
+    "Full manifests, calibration, raw logs, dataset integrity and full extraction provenance were not supplied."
+  ]
+}

@@ -25,10 +25,13 @@ def calibrate_known_base(labelled_groups, *, base_identity, cache_identity):
     positive, negative = [], []
     for c, values in groups.items():
         other_means = np.stack([means[k] for k in sorted(means) if k != c])
-        for x in values:
+        # Broadcast GEMV preserves the reference reduction order and exact
+        # candidate thresholds, unlike a BLAS GEMM with different rounding.
+        negatives = np.clip(np.max(np.matmul(other_means, values[:, :, None])[:, :, 0], axis=1), -1, 1)
+        for x, different in zip(values, negatives):
             loo = normalize(sums[c] - x, dimension)
             positive.append(float(np.clip(x @ loo, -1, 1)))
-            negative.append(float(np.clip(np.max(other_means @ x), -1, 1)))
+            negative.append(float(different))
     pos, neg = np.sort(positive), np.sort(negative)
     boundaries = np.unique(np.r_[pos, neg, -1., 1.])
     after = np.nextafter(boundaries, np.inf)

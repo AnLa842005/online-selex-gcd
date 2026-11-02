@@ -1,7 +1,9 @@
 # Phase 3A: clean frozen-DINO CUB infrastructure
 
-Protocol: **online-selex-cub-frozen-dino-v0**. Real CUB feature extraction and
-online evaluation: **NOT RUN**. Phase 3A validates infrastructure using fake
+Protocol: **online-selex-cub-frozen-dino-v0**. Phase 3B is now recorded in the
+[authoritative result report](CUB_FROZEN_DINO_PHASE3B_REPORT.md), including Phase 3C
+runtime hardening and validation. The following describes the original Phase 3A
+validation and lab runbook. Phase 3A validated infrastructure using fake
 metadata, fake feature caches and a tiny mocked encoder only. No real DINO
 inference, training, feature extraction job, download or GPU workload was run.
 
@@ -183,7 +185,7 @@ is zero and no merge/split/delete or prototype cap is implemented.
 
 ## CPU evaluation and resource records
 
-Reuse Phase 2's prototype bank and evaluator unchanged. Stream scores use recorded
+Retain Phase 2 prototype and evaluator semantics (Phase 3C caches/vectorizes their implementation). Stream scores use recorded
 arrival-time assignments before EMA updates; do not re-predict previous stream
 observations. Report local and cumulative Hungarian All/Old/New, novel NMI/ARI,
 fragmentation/duplicate incidences, active/known/novel-origin bank counts,
@@ -253,9 +255,10 @@ calibration, add `--calibration-json "$ONLINE_SELEX_OUTPUT_ROOT/calibration.json
 to step 3 and use new output filenames (omit `--save-calibration` or use a new
 path). This is a fresh chronological run, not a resumed evaluator.
 
-Use output paths outside Git or under existing ignored `outputs/`. Never commit
-manifests with paths/labels, feature matrices, caches, calibration results,
-learner state, run results, checkpoints or temporary staging directories.
+Use output paths outside Git or under existing ignored `outputs/`. Do not commit
+manifests with paths/labels, feature matrices, caches, raw calibration artifacts,
+learner state, raw logs, checkpoints or temporary staging directories. The
+explicitly requested Phase 3B summary record is tracked under results/.
 
 ## Phase 3A validation and Phase 3B work
 
@@ -282,4 +285,5 @@ then report actual metrics and resource usage with **clean online exposure**.
 Check threshold calibration diagnostics, prototype proliferation, fragmentation
 and forgetting before designing further ablations. Broader seeds, threshold
 robustness, momentum ablations and explicit bank/replay budgets remain future
-experiments. Real CUB performance remains **NOT RUN**, not inferred from fixtures.
+experiments. The supplied real Phase 3B results are now recorded separately; no real workload
+was rerun for Phase 3C, and fixture scores are not real CUB evidence.

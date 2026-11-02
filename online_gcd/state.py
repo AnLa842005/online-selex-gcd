@@ -97,6 +97,7 @@ def bank_from_state(data, expected_feature_dim=None):
     if max(p.last_updated_session for p in bank.prototypes) != last:
         raise ValueError('last_session disagrees with prototype metadata')
     bank._next_novel_id, bank._last_session = next_id, last
+    bank._rebuild_cache()
     return bank
 
 

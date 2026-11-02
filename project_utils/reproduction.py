@@ -4,7 +4,7 @@ import torch
 
 
 def load_dino_backbone(path):
-    state = torch.load(path, map_location='cpu')
+    state = torch.load(path, map_location='cpu', weights_only=True)
     if 'teacher' in state:
         state = state['teacher']
         state = {k.removeprefix('module.').removeprefix('backbone.'): v
@@ -33,7 +33,9 @@ def save_training_state(path, model, head, optimizer, scheduler, epoch, **extra)
 def restore_training_state(path, model, head, optimizer, scheduler):
     import numpy as np
     import random
-    state = torch.load(path, map_location='cpu')
+    # Trust boundary: only resume project-generated training state from a trusted source.
+    # Optimizer and Python/NumPy RNG objects require pickle; never use for pretrained weights.
+    state = torch.load(path, map_location='cpu', weights_only=False)
     model.load_state_dict(state['model'])
     head.load_state_dict(state['head'])
     optimizer.load_state_dict(state['optimizer'])

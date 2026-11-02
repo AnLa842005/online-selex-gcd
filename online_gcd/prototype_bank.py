@@ -1,4 +1,5 @@
 """CPU cosine prototypes. This module has no evaluator or stream-label access."""
+from bisect import bisect_left
 from dataclasses import dataclass
 import math
 
@@ -59,6 +60,9 @@ class PrototypeBank:
         self._prototypes = {}
         self._next_novel_id = 1
         self._last_session = 0
+        self._active_ids = []
+        self._row_by_id = {}
+        self._matrix = np.empty((0, self.feature_dim), dtype=np.float64)
 
     @property
     def prototypes(self):
@@ -87,14 +91,57 @@ class PrototypeBank:
             cluster_id = f'known-{class_id}'
             prepared[cluster_id] = Prototype(cluster_id, tuple(mean), len(samples), True, 0, 0)
         self._prototypes = prepared
+        self._rebuild_cache()
+
+    def _rebuild_cache(self):
+        self._active_ids = sorted(self._prototypes)
+        self._row_by_id = {cid: i for i, cid in enumerate(self._active_ids)}
+        capacity = max(16, 2 * len(self._active_ids))
+        self._matrix = np.empty((capacity, self.feature_dim), dtype=np.float64)
+        for cid, i in self._row_by_id.items():
+            self._matrix[i] = self._prototypes[cid].vector
+
+    def _cache_selected(self, selected):
+        cid = selected.cluster_id
+        if cid not in self._row_by_id:
+            n = len(self._active_ids)
+            if n == len(self._matrix):
+                grown = np.empty((max(16, 2 * n), self.feature_dim), dtype=np.float64)
+                grown[:n] = self._matrix[:n]
+                self._matrix = grown
+            i = bisect_left(self._active_ids, cid)
+            # Normally append; insertion also preserves lexical ties past ID 999999.
+            if i < n:
+                self._matrix[i + 1:n + 1] = self._matrix[i:n].copy()
+            self._active_ids.insert(i, cid)
+            for row in range(i, n + 1):
+                self._row_by_id[self._active_ids[row]] = row
+        self._matrix[self._row_by_id[cid]] = selected.vector
 
     def _nearest(self, normalized):
         if not self._prototypes:
             raise ValueError('initialize labelled known prototypes before inference')
-        ordered = self.prototypes
-        similarities = np.asarray([p.vector for p in ordered]) @ normalized
-        index = int(np.argmax(similarities))  # First maximum in lexicographic ID order.
-        return ordered[index], float(similarities[index])
+        similarities = self._matrix[:len(self._active_ids)] @ normalized
+        index = int(np.argmax(similarities))
+        return self._prototypes[self._active_ids[index]], float(similarities[index])
+
+    def predict_batch(self, features, batch_size=256):
+        """Read-only probes; keep GEMV reduction order, vectorized across batches.
+
+        Broadcast matmul uses the same matrix-vector operation as stream inference,
+        avoiding GEMM rounding changes at exact thresholds and tied similarities.
+        """
+        integer(batch_size, 'batch_size', 1)
+        if not self._prototypes:
+            raise ValueError('initialize labelled known prototypes before inference')
+        result = []
+        for start in range(0, len(features), batch_size):
+            values = np.stack([normalize(x, self.feature_dim) for x in features[start:start + batch_size]])
+            scores = np.matmul(self._matrix[:len(self._active_ids)], values[:, :, None])[:, :, 0]
+            indices = np.argmax(scores, axis=1)
+            result.extend(self._active_ids[int(i)] if scores[row, i] >= self.threshold else None
+                          for row, i in enumerate(indices))
+        return result
 
     def predict(self, feature):
         """Read-only inference. Below-threshold probes are rejected (None)."""
@@ -127,5 +174,6 @@ class PrototypeBank:
             selected = Prototype(cluster_id, tuple(observation), 1, False, session_id, session_id)
             self._next_novel_id += 1
         self._prototypes[selected.cluster_id] = selected
+        self._cache_selected(selected)
         self._last_session = session_id
         return selected.cluster_id

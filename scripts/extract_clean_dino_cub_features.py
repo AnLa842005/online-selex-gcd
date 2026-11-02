@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--workers', type=int, default=0)
     parser.add_argument('--reuse', action='store_true', help='Validate existing cache; never resumes partial output')
+    parser.add_argument('--verify-images', action='store_true', help='Opt-in full image existence scan')
     args = parser.parse_args()
     try:
         if args.cub_root is None or args.checkpoint is None:
@@ -32,7 +33,7 @@ def main():
         config = load_config(args.config, CleanConfig)
         bundle = load_bundle(args.manifests, config)
         metadata = extract(args.cub_root, args.checkpoint, bundle, config, args.output,
-                           device=args.device, batch_size=args.batch_size, workers=args.workers, reuse=args.reuse)
+                           device=args.device, batch_size=args.batch_size, workers=args.workers, reuse=args.reuse, verify_images=args.verify_images)
         print(f'Complete cache checksum: {metadata["checksum"]}')
     except (ValueError, OSError, KeyError, RuntimeError) as exc:
         parser.exit(2, f'Clean DINO extraction failed: {exc}\n')

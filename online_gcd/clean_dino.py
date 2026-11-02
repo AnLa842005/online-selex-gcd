@@ -1,6 +1,6 @@
 """Explicit frozen-DINO extraction entrypoints; torch imported only when requested."""
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import os
 import platform
 
@@ -38,16 +38,27 @@ def evaluation_transform():
                          args=SimpleNamespace(interpolation=3, crop_pct=0.875))[1]
 
 
+def safe_image_path(value):
+    if (not isinstance(value, str) or not value or '\\' in value or '\x00' in value
+            or PureWindowsPath(value).drive or value.startswith('/')
+            or any(part in ('', '.', '..') or ':' in part for part in value.split('/'))):
+        raise ValueError(f'unsafe relative CUB image path: {value!r}')
+    return Path(value)
+
+
 class ManifestImages:
     """Private extraction dataset: no true labels returned, no download hooks."""
-    def __init__(self, cub_root, bundle):
-        self.root = (Path(cub_root) / 'images').resolve()
+    def __init__(self, cub_root, bundle, *, verify_images=False):
+        # Lexical validation avoids remote-volume realpath/stat calls per image.
+        # The configured dataset root and its symlinks are trusted local inputs.
+        self.root = Path(os.path.abspath(Path(cub_root) / 'images'))
         p = bundle['partition']
         by_id = {'cub-' + digest(['CUB-200-2011', r['image_id']]): r['path'] for r in p['source_records']}
-        self.paths = [self.root / by_id[sid] for sid in p['feature_sample_ids']]
-        for path in self.paths:
-            if not path.resolve().is_relative_to(self.root) or not path.is_file():
-                raise ValueError(f'image missing or outside CUB root: {path}')
+        self.paths = [self.root / safe_image_path(by_id[sid]) for sid in p['feature_sample_ids']]
+        if verify_images:
+            for path in self.paths:
+                if not path.is_file():
+                    raise FileNotFoundError(f'CUB image missing: {path}')
         self.transform = evaluation_transform()
 
     def __len__(self):
@@ -81,7 +92,7 @@ def normalized_batches(model, loader, device, total):
             yield features
 
 
-def extract(cub_root, checkpoint, bundle, config, output, *, device='cpu', batch_size=64, workers=0, reuse=False):
+def extract(cub_root, checkpoint, bundle, config, output, *, device='cpu', batch_size=64, workers=0, reuse=False, verify_images=False):
     from online_gcd.prototype_bank import integer
     integer(batch_size, 'batch_size', 1)
     integer(workers, 'workers')
@@ -110,12 +121,12 @@ def extract(cub_root, checkpoint, bundle, config, output, *, device='cpu', batch
     torch.backends.cudnn.allow_tf32 = False
     if device.startswith('cuda') and not torch.cuda.is_available():
         raise ValueError('requested CUDA is unavailable; no automatic fallback')
-    dataset = ManifestImages(cub_root, bundle)
+    dataset = ManifestImages(cub_root, bundle, verify_images=verify_images)
     model = load_clean_encoder(checkpoint).to(device)
     generator = torch.Generator().manual_seed(config.seed)
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, num_workers=workers,
                                          shuffle=False, drop_last=False, generator=generator)
-    provenance = {'kind': 'frozen_dino', 'checkpoint_path': str(Path(checkpoint).resolve()),
+    provenance = {'kind': 'frozen_dino', 'checkpoint_path': os.path.abspath(checkpoint),
                   'repository_commit': code_commit(), 'timestamp_utc': datetime.now(timezone.utc).isoformat(),
                   'device': device, 'batch_size': batch_size, 'workers': workers,
                   'seed': config.seed, 'deterministic_algorithms': True, 'tf32': False,

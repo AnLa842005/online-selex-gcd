@@ -69,9 +69,11 @@ class RealFeatureRunnerTests(unittest.TestCase):
                 self.assertTrue(checked)
                 snapshot = state_json(bank)
                 eligible = [r for r in bundle['probe_evaluator']['records'] if r['eligibility_session'] <= session]
-                with patch.object(bank, 'predict', wraps=bank.predict) as prediction:
+                with patch.object(bank, 'predict_batch', wraps=bank.predict_batch) as prediction:
                     report = original_probe(evaluator, bank, session)
-                    self.assertEqual(prediction.call_count, len(eligible))
+                    self.assertEqual(prediction.call_count, 1)
+                    observed = prediction.call_args.args[0]
+                    np.testing.assert_array_equal(observed, [features[r['feature_row']] for r in eligible])
                 self.assertEqual(state_json(bank), snapshot)
                 return report
 
@@ -124,10 +126,27 @@ import builtins, sys, tempfile
 sys.path.insert(0, 'tests')
 original = builtins.__import__
 def guard(name, *a, **kw):
-    if name.split('.')[0] in ('torch', 'torchvision', 'models', 'data', 'methods'):
+    level = kw.get('level', a[3] if len(a) > 3 else 0)
+    if level == 0 and (name.split('.')[0] in ('torch', 'torchvision', 'models', 'data', 'methods')):
         raise AssertionError(name)
     return original(name, *a, **kw)
 builtins.__import__ = guard
+
+import types
+package = types.ModuleType('guard_relative_fixture')
+package.__path__ = []
+relative_models = types.ModuleType('guard_relative_fixture.models')
+sys.modules[package.__name__] = package
+sys.modules[relative_models.__name__] = relative_models
+assert builtins.__import__('models', {'__package__': package.__name__}, None, (), 1) is relative_models
+for forbidden in ('torch', 'torchvision', 'data', 'models', 'methods'):
+    try:
+        builtins.__import__(forbidden)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError('workload guard did not block ' + forbidden)
+
 from online_cub_fixtures import fixture_cache
 from online_gcd.cub_runner import run_cub_baseline
 from online_gcd.clean_protocol import CleanConfig

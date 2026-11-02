@@ -13,39 +13,52 @@ from online_gcd.calibration import calibrate_known_base
 from online_gcd.cub_manifest import learner_session, load_bundle
 from online_gcd.evaluator import OnlineEvaluator
 from online_gcd.feature_cache import load_cache
-from online_gcd.prototype_bank import PrototypeBank
+from online_gcd.prototype_bank import PrototypeBank, integer
 from online_gcd.state import state_json
 from online_gcd.stream import EvaluationRecord
 from online_gcd.synthetic import LabelledEmbedding
 
 
-def run_cub_baseline(manifests, cache, config, *, calibration_record=None, allow_fixture=False):
-    # Existing sklearn dependency; avoid thread-launch overhead for small banks.
-    with threadpool_limits(limits=1, user_api='blas'):
+def run_cub_baseline(manifests, cache, config, *, calibration_record=None, allow_fixture=False, blas_threads=1, progress=print):
+    integer(blas_threads, 'blas_threads', 1)
+    # Configurable: tiny GEMV calls often lose time launching many BLAS workers.
+    with threadpool_limits(limits=blas_threads, user_api='blas'):
         return _run_cub_baseline(manifests, cache, config, calibration_record=calibration_record,
-                                 allow_fixture=allow_fixture)
+                                 allow_fixture=allow_fixture, blas_threads=blas_threads, progress=progress)
 
 
-def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fixture):
+def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fixture, blas_threads, progress):
+    def log(message):
+        if progress is not None:
+            progress(message)
+
     started = time.perf_counter()
+    log('Feature cache validation start')
     bundle = load_bundle(manifests, config, official=not allow_fixture)
     features, provenance = load_cache(cache, bundle, allow_fixture=allow_fixture)
+    log(f'Feature cache validation end: samples={len(features)} elapsed={time.perf_counter() - started:.3f}s')
     p = bundle['partition']
     groups = {c: [] for c in p['known_classes']}
     # Calibration gets only the labelled base projection, no stream/probe data.
     for row in bundle['base']['records']:
         groups[row['known_class_id']].append(features[row['feature_row']])
+    log('Threshold calibration start (labelled known base only)')
+    calibration_started = time.perf_counter()
     calibration = calibrate_known_base(groups, base_identity=bundle['base']['checksum'],
                                         cache_identity=provenance['checksum'])
     if calibration_record is not None:
         verify(calibration_record)
         if calibration_record != calibration:
             raise ValueError('calibration does not match known base features, cache or deterministic objective')
+    log(f'Threshold calibration end: threshold={calibration["threshold"]:.17g} elapsed={time.perf_counter() - calibration_started:.3f}s')
+    log('Known prototype initialization start')
     bank = PrototypeBank(768, threshold=calibration['threshold'], momentum=0.9)
     bank.initialize_known(groups)
+    log(f'Known prototype initialization end: prototypes={len(bank.prototypes)}')
     probes = tuple(LabelledEmbedding(r['sample_id'], r['class_id'], features[r['feature_row']])
                    for r in bundle['probe_evaluator']['records'])
     evaluator = OnlineEvaluator(p['known_classes'], p['class_introduction_schedule'], probes)
+    evaluator.progress = log
     base_probe = evaluator.evaluate_base(bank)
     sessions = []
     started_tracing = not tracemalloc.is_tracing()
@@ -54,6 +67,7 @@ def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fix
     try:
         for session_id in range(1, 6):
             session_started = time.perf_counter()
+            log(f'Session {session_id} start: prototypes={len(bank.prototypes)}')
             predictions = {}
             for row in learner_session(bundle, session_id):
                 predictions[row['sample_id']] = bank.observe(row['sample_id'], row['session_id'],
@@ -64,9 +78,13 @@ def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fix
             report = evaluator.evaluate_session(session_id, records, predictions, bank)
             report['performance'] = {'processing_seconds': processed - session_started,
                                      'evaluation_seconds': time.perf_counter() - processed,
+                                     'stream_assignment_seconds': processed - session_started,
+                                     **evaluator.last_timing,
                                      'prototype_vector_payload_bytes': len(bank.prototypes) * 768 * 8,
                                      'learner_state_json_bytes': len(state_json(bank).encode('utf-8')),
                                      'peak_traced_python_bytes': tracemalloc.get_traced_memory()[1]}
+            report['performance']['total_session_seconds'] = time.perf_counter() - session_started
+            log(f'Session {session_id} end: prototypes={len(bank.prototypes)} elapsed={report["performance"]["total_session_seconds"]:.3f}s')
             sessions.append(report)
     finally:
         if started_tracing:
@@ -87,7 +105,7 @@ def _run_cub_baseline(manifests, cache, config, *, calibration_record, allow_fix
                           'active_prototype_count': final['active_prototype_count'],
                           'discovered_novel_cluster_count': final['discovered_novel_cluster_count']},
               'performance': {'total_seconds': time.perf_counter() - started,
-                              'blas_threads': 1,
+                              'blas_threads': blas_threads,
                               'feature_payload_bytes': int(features.nbytes),
                               'memory_note': 'tracemalloc peak includes evaluator; excludes untraced native/RSS memory'},
               'versions': {'python': platform.python_version(), 'numpy': np.__version__,

@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--calibration-json', type=Path, help='Optional previously saved matching calibration')
     parser.add_argument('--save-calibration', type=Path)
     parser.add_argument('--save-state', type=Path)
+    parser.add_argument('--blas-threads', type=int, default=1, help='CPU BLAS threads; benchmark before increasing')
     args = parser.parse_args()
     try:
         outputs = [p.resolve() for p in (args.output_json, args.save_calibration, args.save_state) if p is not None]
@@ -31,7 +32,8 @@ def main():
             raise ValueError('outputs must be distinct new files in existing directories')
         config = load_config(args.config, CleanConfig)
         calibration = read_json(args.calibration_json) if args.calibration_json else None
-        result, bank = run_cub_baseline(args.manifests, args.cache, config, calibration_record=calibration)
+        result, bank = run_cub_baseline(args.manifests, args.cache, config, calibration_record=calibration, blas_threads=args.blas_threads,
+                                        progress=lambda message: print(message, flush=True))
         print('Frozen-DINO clean online baseline (CPU; not synthetic or full-SelEx upper bound)')
         print('Session  All     Old     New     Prototypes  Processing(s)')
         for row in result['sessions']:
@@ -44,6 +46,8 @@ def main():
             write_json(args.save_calibration, result['calibration'])
         if args.save_state:
             save_state(bank, args.save_state)
+        for output in outputs:
+            print(f'Saved: {output}', flush=True)
     except (ValueError, OSError, KeyError) as exc:
         parser.exit(2, f'Clean CUB baseline failed: {exc}\n')
 

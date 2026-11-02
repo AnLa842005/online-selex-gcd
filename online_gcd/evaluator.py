@@ -1,4 +1,6 @@
 """Privileged evaluation and frozen identity calibration; labels never enter the bank."""
+import time
+
 import numpy as np
 
 from online_gcd.metrics import accuracy_slices, clustering_report, hungarian_mapping, validate_predictions
@@ -27,12 +29,20 @@ class OnlineEvaluator:
         self._best_probe = {}
         self._previous_probe = {}
         self._last_session = None
+        self.last_timing = {}
+        self.progress = None
 
     def _probe(self, bank, session_id):
         eligible = self.known | {c for c, t in self.introduction.items() if t <= session_id}
         records = [p for p in self.probes if p.class_id in eligible]
         before = state_json(bank)
-        predictions = [bank.predict(p.feature) for p in records]
+        if self.progress:
+            self.progress(f'Probe {session_id} start: samples={len(records)} prototypes={len(bank.prototypes)}')
+        probe_started = time.perf_counter()
+        predictions = bank.predict_batch([p.feature for p in records])
+        self.last_timing['probe_evaluation_seconds'] = time.perf_counter() - probe_started
+        if self.progress:
+            self.progress(f'Probe {session_id} end: elapsed={self.last_timing["probe_evaluation_seconds"]:.3f}s')
         if state_json(bank) != before:
             raise RuntimeError('probe prediction mutated learner state')
         labels = [p.class_id for p in records]
@@ -64,6 +74,7 @@ class OnlineEvaluator:
         return report
 
     def evaluate_session(self, session_id, records, predictions_by_id, bank):
+        evaluation_started = time.perf_counter()
         integer(session_id, 'session_id', 1)
         if self._last_session is None or session_id != self._last_session + 1 or bank.last_session != session_id:
             raise ValueError('evaluate sessions consecutively after processing their observations')
@@ -101,5 +112,7 @@ class OnlineEvaluator:
             'known_prototype_count': sum(p.originated_known for p in bank.prototypes),
             'discovered_novel_cluster_count': sum(not p.originated_known for p in bank.prototypes),
         }
+        self.last_timing['metric_computation_seconds'] = (time.perf_counter() - evaluation_started
+                                                         - self.last_timing['probe_evaluation_seconds'])
         self._last_session = session_id
         return report

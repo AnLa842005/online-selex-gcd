@@ -138,10 +138,27 @@ import sys
 platform.uname()
 original_import = builtins.__import__
 def guarded_import(name, *args, **kwargs):
-    if name.split('.')[0] in {'torch', 'torchvision', 'data', 'models', 'methods'} or name == 'online_gcd.ssb':
+    level = kwargs.get('level', args[3] if len(args) > 3 else 0)
+    if level == 0 and (name.split('.')[0] in {'torch', 'torchvision', 'data', 'models', 'methods'} or name == 'online_gcd.ssb'):
         raise AssertionError('Forbidden workload import: ' + name)
     return original_import(name, *args, **kwargs)
 builtins.__import__ = guarded_import
+
+import types
+package = types.ModuleType('guard_relative_fixture')
+package.__path__ = []
+relative_models = types.ModuleType('guard_relative_fixture.models')
+sys.modules[package.__name__] = package
+sys.modules[relative_models.__name__] = relative_models
+assert builtins.__import__('models', {'__package__': package.__name__}, None, (), 1) is relative_models
+for forbidden in ('torch', 'torchvision', 'data', 'models', 'methods', 'online_gcd.ssb'):
+    try:
+        builtins.__import__(forbidden)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError('workload guard did not block ' + forbidden)
+
 def audit(event, args):
     if event in {'socket.connect', 'socket.getaddrinfo', 'subprocess.Popen'}:
         raise AssertionError('Forbidden external operation: ' + event)

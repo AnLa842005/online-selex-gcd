@@ -11,7 +11,8 @@
 > checkpoint or CUB features; synthetic scores are not research results.
 
 > Phase 3A: [clean frozen-DINO CUB pipeline and lab runbook](docs/CUB_FROZEN_DINO_BASELINE.md).
-> Infrastructure is validated with fixtures; real feature extraction/evaluation is NOT RUN.
+> Phase 3B: [first clean Online GCD result and Phase 3C hardening](docs/CUB_FROZEN_DINO_PHASE3B_REPORT.md).
+> RunPod results are recorded from the supplied console record; Phase 3C validation uses fixtures only.
 
 # SelEx: Self-Expertise in Fine-Grained Generalized Category Discovery
 
