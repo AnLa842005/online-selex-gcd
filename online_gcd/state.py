@@ -10,6 +10,9 @@ from online_gcd.prototype_bank import BASELINE_VERSION, Prototype, PrototypeBank
 
 
 def state_dict(bank):
+    if getattr(bank, 'selex_euclidean_enabled', False):
+        from online_gcd.selex_state import selex_state_dict
+        return selex_state_dict(bank)
     if getattr(bank, 'consolidation_enabled', False):
         from online_gcd.consolidation_state import consolidation_state_dict
         return consolidation_state_dict(bank)
@@ -45,6 +48,9 @@ def _reject_constant(value):
 
 
 def bank_from_state(data, expected_feature_dim=None):
+    if isinstance(data, dict) and data.get('schema_version') == 3:
+        from online_gcd.selex_state import selex_bank_from_state
+        return selex_bank_from_state(data, expected_feature_dim)
     if isinstance(data, dict) and data.get('schema_version') == 2:
         from online_gcd.consolidation_state import consolidation_bank_from_state
         return consolidation_bank_from_state(data, expected_feature_dim)

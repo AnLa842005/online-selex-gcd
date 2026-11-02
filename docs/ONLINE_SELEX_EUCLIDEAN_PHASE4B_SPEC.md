@@ -311,3 +311,14 @@ Reason: make identity/resume deterministic without an unbounded retired registry
   inference. Save/load preserves the counter and active IDs exactly.
 - Reject duplicate IDs, invalid membership, missing leaves, hierarchy cycles and
   a next_node_id not greater than every active node ID.
+
+## Implementation status — Phase 4B-1, 2026-11-02
+
+The historical frozen decisions above, including the approved A1-A3 clarifications,
+are now implemented for synthetic/fake-cache validation only. See the
+[implementation, limits and observed fixture results](ONLINE_SELEX_EUCLIDEAN_PHASE4B_1.md)
+and [requirement/module/test mapping](PHASE4B_1_IMPLEMENTATION_MAPPING.md).
+This status update does not change any algorithmic decision or empirical acceptance
+gate. The user's Phase 4B-1 instruction authorizes synthetic implementation while
+the original real-runtime calibration audit remains deferred before Phase 4B-2.
+No real-data method result, encoder/head training or research improvement is claimed.

@@ -16,7 +16,9 @@
 
 > Phase 4A: [novel-prototype consolidation control](docs/NOVEL_PROTOTYPE_CONSOLIDATION.md)
 > is closed as a [real CUB negative control](docs/CUB_PHASE4A_REAL_CONTROL_REPORT.md): one merge, Probe New unchanged.
-> It is not Online SelEx. [Phase 4B Euclidean is specification/plan only](docs/ONLINE_SELEX_EUCLIDEAN_PHASE4B_SPEC.md).
+> It is not Online SelEx. [Phase 4B-1 Euclidean implementation](docs/ONLINE_SELEX_EUCLIDEAN_PHASE4B_1.md)
+> is opt-in and validated on synthetic/fake caches only; no real CUB result is claimed.
+> [Frozen specification and approved amendments](docs/ONLINE_SELEX_EUCLIDEAN_PHASE4B_SPEC.md).
 > See the [research roadmap](docs/RESEARCH_ROADMAP.md) for the calibration audit and Phase 5 boundary.
 
 # SelEx: Self-Expertise in Fine-Grained Generalized Category Discovery

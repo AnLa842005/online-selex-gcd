@@ -40,15 +40,17 @@ and exact runtime versions remain to be audited. Do not weaken strict matching.
 The old Phase 3B JSON retains pending local import; the new record carries the
 reported runtime thresholds/audit without rewriting historical metrics.
 
-## Phase 4B: Online SelEx Euclidean, specification frozen
+## Phase 4B: Online SelEx Euclidean, synthetic implementation
 
 [Specification v0](ONLINE_SELEX_EUCLIDEAN_PHASE4B_SPEC.md) reserves a separate method
 identity and freezes the input/state/output contract, causal updates, frozen
 encoder, zero replay, known-base calibration, temporal hierarchy evidence,
 mechanism ablations, resource accounting and acceptance criteria. It proposes
-hierarchy-conditioned assignment without retiring leaf IDs. No algorithm, head,
-loss, CLI method or Phase 4B workload is implemented by this task. The method is
-an untested adaptation, not renamed consolidation or an offline USE/SSE claim.
+hierarchy-conditioned assignment without retiring leaf IDs. The approved A1-A3 clarifications are in `d7acbf0`; a separate
+[Phase 4B-1 implementation](ONLINE_SELEX_EUCLIDEAN_PHASE4B_1.md) now validates the
+method on synthetic/fake caches only. It is not renamed consolidation or an
+offline USE/SSE reproduction. No real CUB/GPU/encoder/head training ran. Fixture
+correctness is not a research improvement; hard/noisy cases retain negative outcomes.
 
 Current gates and future work:
 
@@ -58,8 +60,11 @@ Current gates and future work:
   before implementation; no performance promise.
 - Pending: obtain and audit original versus recalibrated calibration and full
   runtime/input provenance, without inventing a mismatch cause.
-- Pending, separate implementation task: isolated primitives/state and reference
-  tests, causal hooks and required mechanism ablations on synthetic/fake caches.
+- Complete: isolated Euclidean learner/schema-3 state, scalar/brute-force references,
+  causal hooks and separate geometry/lambda-zero/no-hierarchy mechanism arms, tested
+  on synthetic/fake caches. Existing baseline and Phase 4A remain unchanged.
+- Deferred before Phase 4B-2: real-runtime calibration/input audit, actual-scale
+  CPU/growth/calibration-memory validation and a frozen real evaluation plan.
 - Pending, separately authorized real execution only: freeze implementation and
   configs, verify identical input identities, archive all metrics/calibrations,
   evaluate every predeclared gate and report failures/tradeoffs without probe tuning.
