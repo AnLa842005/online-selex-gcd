@@ -6,6 +6,23 @@ baseline identity, state schema, predictions and metrics are preserved when it
 is disabled. Feature extraction, DINO definition, SSB split, stream order and
 probe eligibility are unchanged.
 
+## Current status: closed negative control
+
+The user reports that real CUB CPU execution at `64fc515` has completed. It yielded
+one merge, final active prototypes 2067 -> 2065, and unchanged Probe New at about
+2.51%. Phase 4A did not resolve fragmentation and is retained as a negative/control
+ablation. See the [real CUB report and calibration audit](CUB_PHASE4A_REAL_CONTROL_REPORT.md)
+and [curated record](../results/cub_frozen_dino_consolidation_phase4a.json).
+The base-known calibrated threshold did not transfer effectively in this run;
+do not tune it using novel/probe labels or rename the control as Online SelEx.
+Cumulative All is unchanged while New decreases; Old/New redistribution is not
+an improvement. The raw artifacts remain on the persisted RunPod Network Volume
+at `/workspace/runs/cub_phase4a_control_20261102_062837`.
+
+This documentation task records supplied evidence, not an independent raw-artifact
+audit or a new workload. The following method/fixture notes describe the retained
+control implementation. [Phase 4B is frozen at specification/plan only](ONLINE_SELEX_EUCLIDEAN_PHASE4B_SPEC.md).
+
 ## Motivation and scope
 
 The authoritative clean frozen-DINO CUB baseline discovered 1967 novel clusters
@@ -196,10 +213,12 @@ CUB CLI still rejects fixture caches and exposes no fixture bypass. The
 model of the real CUB distribution. Keep generated outputs under ignored
 `outputs/` or outside Git; do not commit generated result/cache/state artifacts.
 
-## Later real frozen-cache evaluation (not run here)
+## Commands for a future authorized replication
 
-Only after a separately authorized real workload, reuse the already persisted
-clean manifests/cache without extraction or training:
+The reported real execution is now recorded separately above. These commands are
+reference instructions for a future authorized replication, not commands run by
+this documentation task. Reuse persisted clean manifests/cache without extraction
+or training; verify the actual archived identities before claiming matched inputs:
 
 ```bash
 python scripts/run_cub_frozen_dino_baseline.py \
@@ -221,11 +240,19 @@ help. Never tune the merge threshold on novel/test labels or these final scores.
 Known/novel confusions and over-merging remain possible; new aggregate centroids
 can move, and greedy merging is not an endpoint-purity guarantee.
 
-The original RunPod Phase 3B assignment calibration artifact has not been supplied
-or found in the workspace. Its authoritative record remains `pending_import`
-with `threshold: null`; fixture thresholds are unrelated. The existing importer
-is unchanged and must validate the real artifact when it becomes available. Do
-not replace authoritative metrics or infer the missing threshold.
+The user reports original-artifact structural import passed on RunPod, but strict
+runtime matching failed in its Python 3.13 environment. Known-base-only runtime
+recalibration reproduced Phase 3B control metrics exactly. The cause remains an
+unresolved numerical/runtime compatibility issue; exact metrics do not prove
+calibration-record equality. Runtime assignment/consolidation thresholds are
+`0.76694905900245858` / `0.84814506320210814`, separately recorded in the real-run
+summary. These are not fixture thresholds.
+
+Neither original nor recalibrated raw calibration JSON is attached locally. The
+historical Phase 3B record therefore remains unchanged (`pending_import`, threshold
+null), while the new record preserves the reported RunPod audit. No importer or
+strict runtime comparison is changed. Obtain the original/recalibrated artifacts,
+versions and field-level diff before diagnosing or changing compatibility behavior.
 
 The [research roadmap](RESEARCH_ROADMAP.md) separates Phase 4A consolidation
 control, Phase 4B Online SelEx Euclidean and Phase 5 hyperbolic work.
@@ -267,7 +294,7 @@ threshold is a fixed artificial kernel fixture setting; experiment thresholds
 still come exclusively from known-base calibration. There is no wall-clock
 assertion in unit tests and no claim about real CUB runtime or quality.
 
-## Validation completed
+## Implementation validation at 64fc515 (before the reported real execution)
 
 - **119 tests passed** with `python -m unittest discover -s tests -v` in the project
   Python 3.11.9 environment (final run: 58.044 seconds). This includes all 92 prior

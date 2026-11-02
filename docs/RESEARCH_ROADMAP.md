@@ -2,47 +2,73 @@
 
 ## Preserved foundations
 
-- Offline SelEx reproduction: 73.95% result, algorithm, losses and training defaults
-  remain unchanged; it is not a clean online initialization or a comparable score.
-- Phases 1–3: fixed clean protocol, synthetic CPU baseline, frozen-DINO CUB
-  infrastructure and the authoritative Phase 3B run. Phase 3C hardens paths,
-  compatibility and CPU evaluation. The Phase 3B calibration artifact is pending.
+- Offline SelEx reproduction: 73.95% result, losses, training defaults and baseline
+  branch/tag remain unchanged. Different exposure/protocol prevents a direct
+  comparison with clean Online GCD.
+- Phases 1–3: fixed clean protocol, CPU fixtures, frozen-DINO infrastructure and
+  authoritative Phase 3B result. Its historical JSON remains unchanged; Phase 3C
+  hardens paths, compatibility and CPU evaluation.
 
-## Phase 4A: consolidation control
+## Phase 4A: closed negative/control ablation
 
-Implemented as the opt-in `frozen-dino-prototype-consolidation-v0` ablation.
-See [method, limitations, commands and validation](NOVEL_PROTOTYPE_CONSOLIDATION.md).
-It tests novel-only greedy geometry, base-known merge calibration and cluster
-lineage without encoder learning, replay or an oracle class count. The baseline
-stays the default. Synthetic/fake-cache evidence validates behavior; no real CUB
-consolidation result is claimed. This is a control, not Online SelEx.
+Implementation: `64fc515894f30a0d48ce3f90294945408a5dd9c7`, opt-in
+`frozen-dino-prototype-consolidation-v0`. See the [retained method](NOVEL_PROTOTYPE_CONSOLIDATION.md),
+[real CUB closure/audit](CUB_PHASE4A_REAL_CONTROL_REPORT.md) and
+[curated result](../results/cub_frozen_dino_consolidation_phase4a.json).
 
-## Phase 4B: Online SelEx Euclidean
+User-reported CPU execution is complete; no Pod remains running. One merge in
+session 4 changed the final active count from 2067 to 2065, with Probe New unchanged
+at 2.51%. Base-known merge calibration did not transfer effectively to novel
+prototypes in this run. Phase 4A did not solve fragmentation. Keep it as a negative
+control, not Online SelEx. Cumulative All is unchanged and New decreases; do not
+call the Old/New redistribution an improvement or retune thresholds on novel/probe
+labels. The original disabled prototype baseline remains the default.
 
-Entry criteria before research training or real-data performance claims:
+Artifacts remain at `/workspace/runs/cub_phase4a_control_20261102_062837` on the
+persisted RunPod Network Volume. The current task records supplied execution
+figures and performs local source/schema tests only; raw files were not supplied
+or independently inspected.
 
-1. Phase 4A regression/equivalence, label-boundary, deterministic merge, lineage
-   and resume checks pass; default clean baseline and offline defaults remain
-   unchanged and the consolidation control is versioned independently.
-2. Obtain/import/audit the original RunPod Phase 3B calibration using the existing
-   validator, preserving authoritative metrics and provenance. Keep it pending
-   until the real artifact is available.
-3. With separate authorization, compare baseline and consolidation on the same
-   persisted frozen-DINO cache/manifests/seed. Archive both threshold records,
-   raw versus consolidated metrics, lineage, fragmentation, rejection, forgetting
-   and runtime. Record negative results rather than tuning on probes.
-4. Predeclare a separate Euclidean Online SelEx design and experiment identity:
-   label-access boundaries, online adaptation of the SelEx objectives/hierarchy,
-   update timing, state/identity rules, resource budgets and fair controls.
-   Specify any future USE/SSE/HSSK or replay adaptation explicitly before coding
-   it; Phase 4A implements none of them. Define tests on synthetic inputs first.
+## Outstanding calibration reproducibility issue
 
-Real training, extraction or dataset access requires a new authorized workload.
-The current phase does not automatically authorize any of it.
+The user reports original assignment-artifact structural import passed, strict
+runtime equality failed under Python 3.13, and known-base-only recalibration
+reproduced Phase 3B metrics exactly. Record all three facts separately. The cause
+is an **unresolved numerical/runtime compatibility issue**, not a diagnosed Python,
+BLAS or numerical bug. Original/recalibrated artifacts, field-level differences
+and exact runtime versions remain to be audited. Do not weaken strict matching.
+The old Phase 3B JSON retains pending local import; the new record carries the
+reported runtime thresholds/audit without rewriting historical metrics.
+
+## Phase 4B: Online SelEx Euclidean, specification frozen
+
+[Specification v0](ONLINE_SELEX_EUCLIDEAN_PHASE4B_SPEC.md) reserves a separate method
+identity and freezes the input/state/output contract, causal updates, frozen
+encoder, zero replay, known-base calibration, temporal hierarchy evidence,
+mechanism ablations, resource accounting and acceptance criteria. It proposes
+hierarchy-conditioned assignment without retiring leaf IDs. No algorithm, head,
+loss, CLI method or Phase 4B workload is implemented by this task. The method is
+an untested adaptation, not renamed consolidation or an offline USE/SSE claim.
+
+Current gates and future work:
+
+- Complete: Phase 4A implementation/fixture validation and reported real negative
+  control; baseline/offline behavior preserved.
+- Complete: Phase 4B specification/plan and evaluator-only success criteria frozen
+  before implementation; no performance promise.
+- Pending: obtain and audit original versus recalibrated calibration and full
+  runtime/input provenance, without inventing a mismatch cause.
+- Pending, separate implementation task: isolated primitives/state and reference
+  tests, causal hooks and required mechanism ablations on synthetic/fake caches.
+- Pending, separately authorized real execution only: freeze implementation and
+  configs, verify identical input identities, archive all metrics/calibrations,
+  evaluate every predeclared gate and report failures/tradeoffs without probe tuning.
+
+This task authorizes no real CUB run, GPU work, extraction, training or download.
 
 ## Phase 5: hyperbolic extension
 
-Begin after a tested, versioned Euclidean Online SelEx implementation and fair
-Euclidean baseline/control comparisons exist. Specify geometry, hierarchy and
-numerical stability separately; preserve the same clean protocol and exposure.
-Hyperbolic geometry must not be mixed into the consolidation control.
+Begin after a tested, versioned Euclidean method and fair baseline/control
+comparisons. Specify geometry, hierarchy and numerical stability separately with
+the same clean exposure/protocol. No hyperbolic code belongs in the Phase 4A
+control or the first frozen-feature Phase 4B design.

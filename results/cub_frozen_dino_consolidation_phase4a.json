@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "record_kind": "curated_user_reported_phase4a_real_cub_control",
+  "status": "closed_negative_control",
+  "dataset": "CUB-200-2011",
+  "protocol": "online-selex-cub-frozen-dino-v0",
+  "seed": null,
+  "experiment": "frozen-dino-prototype-consolidation-v0",
+  "provenance": {
+    "run_commit": "64fc515894f30a0d48ce3f90294945408a5dd9c7",
+    "source": "User-supplied real RunPod execution summary; no raw runtime artifacts supplied locally in this task",
+    "validation_scope": "Curated transcription and consistency checks; not an independent re-execution or raw-artifact audit",
+    "persisted_artifact_directory": "/workspace/runs/cub_phase4a_control_20261102_062837",
+    "artifact_storage": "persisted RunPod Network Volume",
+    "raw_artifact_hashes": null,
+    "execution_timestamp_utc": null,
+    "phase3b_reference_record": "results/cub_frozen_dino_online_seed1.json",
+    "cache_checksum": null,
+    "cache_identity_note": "No Phase 4A raw cache provenance/hash supplied; do not infer it from the directory or matching metrics",
+    "phase3b_reference_seed": 1
+  },
+  "runtime": {
+    "platform": "RunPod CPU Pod",
+    "vcpus": 8,
+    "python": "3.13 virtual environment",
+    "cache_samples": 11788,
+    "pod_running_after_execution": false,
+    "exact_python_patch": null,
+    "numpy_version": null,
+    "blas_version": null
+  },
+  "calibration_audit": {
+    "assignment_threshold": 0.7669490590024586,
+    "assignment_threshold_reported_decimal": "0.76694905900245858",
+    "consolidation_threshold": 0.8481450632021081,
+    "consolidation_threshold_reported_decimal": "0.84814506320210814",
+    "threshold_source": "runtime recalibration from labelled known base only",
+    "reported_original_artifact_structural_import": "passed",
+    "reported_original_artifact_strict_runtime_match": "failed",
+    "reported_control_off_phase3b_metrics_match": "exact",
+    "issue_status": "unresolved_numerical_runtime_compatibility_issue",
+    "cause": null,
+    "local_original_artifact_status": "not_supplied; historical Phase 3B record left unchanged",
+    "evidence_scope": "RunPod audit outcomes reported by user; original calibration and field-level diff not available locally"
+  },
+  "control_off": {
+    "consolidation_enabled": false,
+    "summary": {
+      "final_session_accuracy": {
+        "all": 0.2912801484230056,
+        "old": 0.4153846153846154,
+        "new": 0.2675018422991894
+      },
+      "average_online_accuracy": 0.36920810510124125,
+      "cumulative_accuracy": {
+        "all": 0.23309608540925267,
+        "old": 0.30820547031354234,
+        "new": 0.19552886219552887
+      },
+      "probe_accuracy": {
+        "all": 0.19295823265447015,
+        "old": 0.36234396671289876,
+        "new": 0.025085910652920963
+      },
+      "average_forgetting": 0.06604838911435613,
+      "active_prototype_count": 2067,
+      "discovered_novel_cluster_count": 1967
+    },
+    "end_to_end_elapsed_seconds_approx": 15.139
+  },
+  "consolidation_on": {
+    "consolidation_enabled": true,
+    "summary": {
+      "final_session_accuracy": {
+        "all": 0.2912801484230056,
+        "old": 0.4153846153846154,
+        "new": 0.2675018422991894
+      },
+      "average_online_accuracy": 0.36920810510124125,
+      "probe_accuracy": {
+        "all": 0.19295823265447015,
+        "old": 0.36234396671289876,
+        "new": 0.025085910652920963
+      },
+      "cumulative_accuracy": {
+        "all": 0.23309608540925267,
+        "old": 0.3122081387591728,
+        "new": 0.19352686019352686
+      },
+      "average_forgetting": null,
+      "active_prototype_count": 2065,
+      "discovered_novel_cluster_count": 1965,
+      "retired_cluster_count": 1,
+      "ever_created_novel_cluster_count": 1966,
+      "maximum_merge_chain_depth": 1,
+      "active_probe_fragmentation": {
+        "mean_excess_clusters": 4.5,
+        "duplicate_cluster_count": 900,
+        "fragmented_class_fraction": 0.93
+      }
+    },
+    "end_to_end_elapsed_seconds_approx": 17.152,
+    "sessions": [
+      {
+        "session_id": 1,
+        "merge_count": 0,
+        "active_prototype_count": 315,
+        "consolidation_seconds_approx": 0.025
+      },
+      {
+        "session_id": 2,
+        "merge_count": 0,
+        "active_prototype_count": 597,
+        "consolidation_seconds_approx": 0.118
+      },
+      {
+        "session_id": 3,
+        "merge_count": 0,
+        "active_prototype_count": 938,
+        "consolidation_seconds_approx": 0.345
+      },
+      {
+        "session_id": 4,
+        "merge_count": 1,
+        "active_prototype_count": 1374,
+        "consolidation_seconds_approx": 0.754
+      },
+      {
+        "session_id": 5,
+        "merge_count": 0,
+        "active_prototype_count": 2065,
+        "consolidation_seconds_approx": 1.781
+      }
+    ]
+  },
+  "interpretation": {
+    "classification": "negative/control ablation; not Online SelEx",
+    "fragmentation_resolved": false,
+    "probe_new_improved": false,
+    "prototype_reduction": 2,
+    "bookkeeping": "One explicit retirement and one fewer novel birth account for the two-prototype final difference; do not call it two merges",
+    "threshold_transfer": "Base-known calibrated merge threshold did not transfer effectively to novel prototypes in this run",
+    "cumulative_tradeoff": "All unchanged; Old increased and New decreased. Do not present this redistribution as an improvement",
+    "novel_probe_threshold_tuning_permitted": false
+  },
+  "limitations": [
+    "No raw calibration, learner state, logs or per-class maps were supplied or imported locally for this task.",
+    "Consolidation-on average forgetting was not supplied and remains null.",
+    "End-to-end and per-session overhead values are approximate; timing scopes and complete decomposition were not supplied.",
+    "Exact package versions, cache/manifest hashes, block size, merge IDs/similarity and evaluator mapping conflicts were not supplied.",
+    "No cause of the calibration mismatch is established; exact metric reproduction does not imply artifact equality.",
+    "Single reported seed/run is a negative control observation, not a universal claim about every consolidation variant.",
+    "Do not directly compare with offline SelEx 73.95% because protocol and training exposure differ.",
+    "Runtime seed/config not supplied explicitly; Phase 3B reference seed is 1 but runtime seed remains null pending artifact audit."
+  ]
+}
