@@ -246,3 +246,68 @@ runs. Never directly compare these scores with offline SelEx 73.95%.
 
 Current deliverable stops at this specification. No Phase 4B source algorithm,
 loss, state schema, CLI switch, real workload or trained model is added now.
+
+## Approved amendments — 2026-11-02
+
+Approved by the user before implementation, against base commit
+`2ba7f40f3f2f817530557ba3a0721dbe9c3983d2`. These clarifications take precedence
+where the original text was underspecified. All other frozen decisions remain
+unchanged. No real CUB/GPU/training/download workload is authorized.
+
+### A1 — singleton pseudo-session calibration
+
+Reason: remove circular hierarchy calibration and define diagnostic coverage.
+
+- Use exactly one deterministic known-base pseudo-session with the original
+  split/order/local seed 1. Keep hierarchy singleton throughout; never rebuild
+  or group nodes inside calibration.
+- The pseudo-learner uses the baseline assignment gate, birth, normalized EMA
+  and the main method's temporal evidence update. Hierarchy decisions cannot
+  feed back into this pseudo-stream.
+- Include all pseudo-leaves in diagnostics: both initialized leaves and every
+  additional birth. An external calibrator may retain an immutable known
+  birth-origin label for each leaf, even after its centroid changes.
+- Birth-origin labels classify diagnostic pairs only: same label is positive,
+  different label is negative. They never enter learner state, assignment,
+  evidence updates or hierarchy.
+- Collect only retained diagnostic edges satisfying the main opportunity gate,
+  including at least three opportunities. Select tau_structure using the frozen
+  balanced objective and deterministic largest-threshold tie break.
+- Fail explicitly without eligible positive and negative diagnostics. No constant
+  fallback, novel information or hierarchy feedback is allowed.
+
+### A2 — instantaneous Euclidean geometry mechanism ablation
+
+Reason: define the geometry-only arm without an extra temperature hyperparameter.
+
+`geometry_score(i, j) = 1 - 0.5 * ||p_i - p_j||^2`
+
+Here p_i and p_j are normalized active leaf centroids. The score equals cosine
+similarity, expressed in Euclidean geometry; no exp-distance score or temperature
+is used to define this edge score.
+
+- Calibrate a separate tau_geometry from labelled known-base pseudo-leaf pairs
+  only, with the calibration framework's balanced objective and deterministic
+  tie break. Never borrow tau_assignment or tau_structure.
+- Use instantaneous pre-rebuild centroids at session end. Do not use temporal
+  evidence counts or the minimum-opportunity gate in this ablation.
+- Preserve degree/group bounds, complete-link eligibility, deterministic ties,
+  hierarchy lifecycle, the frozen mixture q and evaluator/leakage boundaries.
+- This is a mechanism ablation, not the main method. No additional tunable
+  hyperparameter is introduced. The original T=0.1 in mixture q remains unchanged.
+
+### A3 — active composite node lifecycle
+
+Reason: make identity/resume deterministic without an unbounded retired registry.
+
+- Singleton leaves are implicit and receive no hierarchy node ID. Only composite
+  groups have node IDs, allocated monotonically through next_node_id, never recycled.
+- At rebuild, exact sorted membership matching an active node retains its ID.
+  New/changed membership receives a new ID; disappearing active membership retires.
+  Membership reappearing after retirement receives a new ID, not its old ID.
+- Learner state stores next_node_id, active nodes/memberships and other inference
+  state required by the spec. It does not retain an unbounded retired-node registry.
+- Retirement/history audit belongs to runner/evaluator artifacts and cannot affect
+  inference. Save/load preserves the counter and active IDs exactly.
+- Reject duplicate IDs, invalid membership, missing leaves, hierarchy cycles and
+  a next_node_id not greater than every active node ID.
