@@ -10,6 +10,10 @@ Update: the **new full teacher checkpoint passes raw official loading**; see
 earlier bare-checkpoint audit as historical evidence. Linux GPU validation is
 still NOT RUN; the prior local JSON is unchanged.
 
+The CLI now also supports opt-in `--online-step`; see the separate
+[one-step contract and Linux commands](DEAN_ONLINE_STEP_SMOKE.md). Historical
+forward-only descriptions below refer to the default mode. CUDA remains NOT RUN.
+
 ## A. Status and base
 
 Initial branch `research/dean-selex`, HEAD
