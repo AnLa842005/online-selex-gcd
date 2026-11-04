@@ -1,0 +1,26 @@
+version: dean-cub-ssb100-draft-v0
+mode: ssb100_draft
+status: NOT RUN
+upstream:
+  url: https://github.com/KU-VGI/OCGCD.git
+  sha: 28b9384cd7ea9b123b03d045bac2e92d8d0b2870
+  branch: main
+result_namespace: dean/ssb100/cub_draft_v0
+seeds: [1, 3, 8, 2, 4]
+protocol:
+  class_split: existing_SSB_100_100
+  labelled_subset: global_known_train_50pct_numpy_randomstate0
+  incremental_sessions: 5
+  novel_classes_per_session: 20
+  replay: unresolved_requires_separate_exposure_budget
+  incremental_epochs: unresolved_requires_preregistered_adaptation
+  learner_novel_count: forbidden
+  evaluator_labels: forbidden_in_learner
+  future_metadata: forbidden_in_learner
+  probe_tuning: forbidden
+  ssb_compliant: false
+execution_enabled: false
+blockers:
+  - Isolate true-label diagnostics and test-based base-checkpoint selection.
+  - Approve batch reuse and training budget separately from frozen single-pass control.
+  - Define unknown-K discovery edge cases and evaluator-only metrics.

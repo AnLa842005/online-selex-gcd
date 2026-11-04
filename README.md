@@ -1,3 +1,12 @@
+> DEAN is now the strong baseline/main integration path. Phase DEAN-0 is
+> preparation only, **NOT RUN**: [upstream/protocol audit](docs/DEAN_UPSTREAM_AUDIT.md),
+> [official CUB runbook](docs/DEAN_REPRODUCTION_RUNBOOK.md), and
+> [separate SSB 100/100 adaptation plan](docs/DEAN_SSB100_ADAPTATION_PLAN.md).
+> Upstream has no explicit repository license, so integration uses a pinned external
+> checkout; no DEAN source is vendored. Official 160/40 and SSB 100/100 are different experiments.
+> Frozen-DINO is **lower bound, frozen**; Phase 4A is **negative control, closed**;
+> existing Phase 4B hierarchy-only work is an **ablation/deferred** path.
+
 > Reproducible offline CUB baseline branch: see [BASELINE_SETUP.md](BASELINE_SETUP.md)
 > for Windows smoke testing, Linux GPU training, exact upstream provenance,
 > environment variables, and known upstream limitations. Original attribution follows.

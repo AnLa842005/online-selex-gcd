@@ -1,5 +1,20 @@
 # Online SelEx research roadmap
 
+## Main path: DEAN strong baseline
+
+DEAN-0 prepares an externally pinned official CUB reproduction, **NOT RUN**.
+See [upstream/protocol audit](DEAN_UPSTREAM_AUDIT.md),
+[reproduction runbook](DEAN_REPRODUCTION_RUNBOOK.md), and
+[future SSB adaptation](DEAN_SSB100_ADAPTATION_PLAN.md). Official 160/40 CUB and
+strict SSB 100/100 are separate experiments and cannot be directly compared.
+DEAN-1 real execution still needs environment/assets/checkpoint validation and
+review of official test selection and label access. No new accuracy is claimed.
+
+Frozen-DINO remains **lower bound, frozen**. Phase 4A remains **negative control,
+closed**. Existing Phase 4B hierarchy-only code/specification is preserved as
+**ablation/deferred**; do not extend it in DEAN-0. Historical gates below describe
+that retained work, not the current main path. Phase 5 is deferred as well.
+
 ## Preserved foundations
 
 - Offline SelEx reproduction: 73.95% result, losses, training defaults and baseline
