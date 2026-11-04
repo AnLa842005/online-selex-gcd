@@ -51,7 +51,7 @@ def main():
         output = args.output.resolve()
         if output.is_relative_to(ROOT) and not output.is_relative_to(ROOT / "runs/dean"):
             raise ValueError("Inside this repo output must be below runs/dean")
-        assets = check_assets(args.dataset_parent, args.checkpoint, output)
+        assets = check_assets(args.dataset_parent, args.checkpoint, output, upstream=checkout)
         report["preflight"] = assets
         if args.action == "verify" or assets["errors"]:
             print(json.dumps(report, indent=2))

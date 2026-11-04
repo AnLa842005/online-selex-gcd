@@ -30,19 +30,27 @@ def cub_metadata(root):
         raise ValueError("Expected official CUB labels 1..200")
     if set(splits.values()) != {"0", "1"} or sum(v == "1" for v in splits.values()) != 5994:
         raise ValueError("Expected official 5994 train / 5794 test split")
+    if len(set(images.values())) != 11788:
+        raise ValueError("Expected 11788 unique CUB image paths")
     for relative in images.values():
         path = (root / "images" / relative).resolve()
         if not path.is_relative_to((root / "images").resolve()) or not path.is_file():
             raise ValueError("CUB image missing or outside image root")
     per_class = [sum(int(labels[i]) == cls and splits[i] == "1" for i in images)
                  for cls in range(1, 201)]
-    return {"train": 5994, "test": 5794, "known": 160, "novel": 40,
+    return {"num_images": len(images), "num_classes": len(set(labels.values())),
+            "train": 5994, "test": 5794, "known": 160, "novel": 40,
+            "known_class_ids_zero_based": list(range(160)),
+            "novel_class_ids_zero_based": list(range(160, 200)),
+            "root": str(root.resolve()), "all_referenced_images_exist": True,
             "base_labelled": sum(int(n * .8) for n in per_class[:160]),
             "metadata_sha256": {name: sha256(root / f"{name}.txt") for name in tables}}
 
 
-def check_assets(dataset_parent, checkpoint, output):
-    report, errors = {"python": platform.python_version()}, []
+def check_assets(dataset_parent, checkpoint, output, upstream=None):
+    report, errors = {"python": platform.python_version(), "platform": platform.system()}, []
+    if platform.system() != "Linux":
+        errors.append("DEAN-1A requires Linux; this host is " + platform.system())
     expected = {"torch": "2.0.0", "torchvision": "0.15.1", "timm": "0.9.8",
                 "scikit-learn": "1.3.2", "numpy": "1.24.4", "scipy": "1.10.1",
                 "pandas": "2.0.3", "Pillow": "9.5.0", "matplotlib": "3.7.3",
@@ -61,18 +69,20 @@ def check_assets(dataset_parent, checkpoint, output):
             errors.append(f"Missing package: {name}")
     try:
         import torch
-        report.update(cuda=torch.version.cuda, gpu_available=torch.cuda.is_available())
+        report.update(torch=torch.__version__, cuda=torch.version.cuda,
+                      cudnn=torch.backends.cudnn.version(), gpu_available=torch.cuda.is_available())
         if not torch.cuda.is_available() or torch.version.cuda != "11.8":
             errors.append("Official launcher requires working CUDA 11.8 GPU runtime")
         else:
             report["gpu"] = torch.cuda.get_device_name(0)
+            report["gpu_total_memory_bytes"] = torch.cuda.get_device_properties(0).total_memory
         # Only load explicitly supplied, trusted local checkpoints; no downloads.
-        state = torch.load(checkpoint, map_location="cpu", weights_only=True)
-        if not isinstance(state, dict) or not isinstance(state.get("teacher"), dict) or not state["teacher"]:
-            raise ValueError("Official DEAN expects a nonempty full-checkpoint ['teacher'] mapping")
-        report["checkpoint"] = {"path": str(Path(checkpoint).resolve()), "sha256": sha256(checkpoint),
-                                "teacher_keys": len(state["teacher"]),
-                                "model_key_compatibility": "NOT VERIFIED; upstream strict=False needs audit"}
+        if upstream is None:
+            raise ValueError("Verified external upstream is required for checkpoint key audit")
+        from .checkpoint_audit import audit_checkpoint
+        report["checkpoint"] = audit_checkpoint(checkpoint, upstream)
+        if report["checkpoint"]["status"] != "PASS":
+            errors.extend("Checkpoint: " + reason for reason in report["checkpoint"]["errors"])
     except Exception as exc:
         errors.append(f"Checkpoint/runtime: {exc}")
     try:
