@@ -5,6 +5,11 @@ This report records actual local observations, not a Linux reproduction result.
 No new DEAN accuracy, full epoch, GPU forward/backward or optimizer step ran.
 Machine-readable evidence: [local JSON report](../results/dean_1a_local_preflight.json).
 
+Update: the **new full teacher checkpoint passes raw official loading**; see
+“Official full DINO teacher checkpoint audit” below. Sections A–M retain the
+earlier bare-checkpoint audit as historical evidence. Linux GPU validation is
+still NOT RUN; the prior local JSON is unchanged.
+
 ## A. Status and base
 
 Initial branch `research/dean-selex`, HEAD
@@ -176,10 +181,117 @@ python scripts/audit_dean_preflight.py --upstream /path/to/OCGCD --dataset-paren
 
 That command exits nonzero on prerequisite failure, and reports
 `PREREQUISITES_PASS_GPU_SMOKE_PENDING` on success, never a completed DEAN-1A pass.
-Only after the separate GPU acceptance passes, the proposed full DEAN-1B command is:
-
-```bash
-python scripts/run_dean.py --action train --config configs/dean/cub_official_v0.yaml --upstream /path/to/OCGCD --dataset-parent /path/to/datasets --checkpoint /path/to/dino_vitbase16_pretrain_full_checkpoint.pth --output /path/to/runs/dean_1b_seed1 --seed 1
-```
+Only a bounded DEAN-1A smoke is the current next step; no full-training command
+is proposed in this report. See the latest checkpoint audit below.
 
 CUB full training remains **NOT RUN**.
+
+## Official full DINO teacher checkpoint audit
+
+Audit date: 2026-11-04. Base `bf8b3655c404b26b0a0e92e81d093689243b4afe`,
+branch `research/dean-selex`, initial working tree clean. Remote was observed at
+`bf8b365` too; the earlier push failure had not left it at `a5a40a1` permanently.
+New evidence: [full checkpoint JSON](../results/dean_1a_full_checkpoint_audit.json).
+The earlier bare-checkpoint file/report is preserved unchanged.
+
+### File and source provenance
+
+Path: `C:/Users/ASUS/Desktop/Code/DA/pretrained/dino_vitbase16_pretrain_full_checkpoint.pth`.
+Exact size: **871,077,689 bytes**. SHA256:
+`491ec6200b350dd7d532cea1b040846cbc1b4ae038299331168fdd3e0361e262`.
+Checkpoint SHA is identical before/after the audit. This is an explicitly trusted
+local full checkpoint, loaded on CPU with `weights_only=False`; no key rewriting,
+checkpoint saving or model/dataset download occurred.
+
+Top-level keys: `student`, `teacher`, `early_stopping_epoch`. Teacher is a nonempty
+mapping with **157 keys**. Prefix distribution (overlapping prefix counts):
+
+| Prefix | Count |
+|---|---:|
+| module.backbone. | 0 |
+| backbone. | 150 |
+| module. | 0 |
+| teacher. | 0 |
+| head. | 7 |
+| module.head. | 0 |
+
+JSON includes at most 20 sample keys, no tensor values. External source remains
+at SHA `28b9384cd7ea9b123b03d045bac2e92d8d0b2870`, correct official origin,
+clean before/after, with all locked file hashes passing. No upstream source was
+modified or vendored.
+
+### Raw official operation and decision
+
+The actual external `ViT_Dino(sz_embedding=768)` is constructed on CPU **before**
+upstream adds the new embedding and replaces the head. No torchvision substitute
+or synthetic model is used for the real-file audit. Initialization seed is 0.
+The disposable model receives exactly:
+
+```python
+model.load_state_dict(checkpoint["teacher"], strict=False)
+```
+
+| Raw result | Observed |
+|---|---:|
+| Exact key matches | 150 / 150 target tensors |
+| Shape-compatible matches | 150 / 150 |
+| Missing target keys | 0 |
+| Unexpected teacher keys | 7 projection-head tensors |
+| Shape mismatches | 0 |
+| Nonfinite matched tensors | 0 |
+| Matched tensor ratio | 100% |
+| Matched parameter-numel | 85,798,656 / 85,798,656 (100%) |
+| Backbone tensors changed after actual load | 150 / 150 |
+
+The seven unexpected keys are `head.last_layer.weight`, and weights/biases for
+`head.mlp.0`, `head.mlp.2`, `head.mlp.4`. Their omission is the actual declared
+`strict=False` behavior; the entire backbone is loaded. All critical groups pass:
+patch_embed 2/2, cls_token 1/1, pos_embed 1/1, final norm 2/2, and **each block
+0..11 12/12**. Per-tensor SHA fingerprints before/after loading confirm actual
+changes, rather than inferring loading solely from matching key names.
+
+**Decision: PASS for current raw official checkpoint compatibility.** Registered
+gates are unchanged from the conservative DEAN-1A audit: 100% backbone parameter
+tensors and numel, all critical groups, no shape mismatch/nonfinite matched
+weights, and actual backbone weight changes. The official operation succeeds
+without exception or prefix conversion. Prefix diagnostics are not needed for
+this file and are not applied. Synthetic regression cases separately demonstrate
+that a `module.backbone.*`-only teacher leaves the official model untouched and
+is classified `BLOCKED_UPSTREAM_CHECKPOINT_PREFIX_MISMATCH`, even when hypothetical
+prefix stripping matches everything. Those cases do not mark official PASS.
+
+If that mismatch occurs on another asset, the two choices remain separate:
+exact-upstream behavior unchanged, or a newly versioned loader-fix reproduction
+with a disclosed deviation. The audit selects neither automatically.
+
+### Validation and next permitted step
+
+New tests cover real strict=False operation on tiny independent fixtures, teacher
+structure, raw exact/shape matching, prefix failure, unchanged-target rejection,
+shape-error partial-load observation, CPU trusted loading, file immutability and
+size failure before unpickling. Existing external-source checks prove the real
+upstream checkout stayed clean. Full suite: **194 tests PASS**, 132.205 seconds.
+Final DEAN tests: **27 tests PASS**, 15.120 seconds. Compilation, both new CLI help
+commands and diff checks pass. The GPU forward CLI has only help/compilation
+validation; no actual GPU result is claimed.
+Official config, baseline SelEx, frozen lower bound and Phase 4A are unchanged;
+offline comparison remains `differences: {}`.
+
+GPU smoke **NOT RUN**, epochs **0**, optimizer steps **0**, full training **NOT RUN**.
+This PASS clears the checkpoint gate only. A Linux candidate environment and real
+CUDA measurements are still required for DEAN-1A acceptance.
+
+A forward-only one-batch CLI is prepared for the next Linux stage, **not executed
+or GPU-validated here**. It checks Linux/package/assets and the raw official load,
+then runs exactly one real CUB train image through the actual model under inference
+mode. It uses the freshly initialized post-load embedding that official code adds
+before base training. It measures shapes, finite output, time and peak VRAM;
+there is no optimizer, backward, epoch or accuracy. It does not validate the
+base-trained head, online EGD/loss or PET updates.
+
+```bash
+python scripts/smoke_dean_gpu_forward.py --upstream /path/to/OCGCD --checkpoint /path/to/dino_vitbase16_pretrain_full_checkpoint.pth --trusted-local --dataset-parent /path/to/datasets --report /path/to/runs/dean_1a_gpu_forward.json
+```
+
+Do not treat that forward-only check as complete online loss/update acceptance.
+No 30/15-epoch command is proposed by this audit.
