@@ -88,10 +88,6 @@ def main():
             raise ValueError("Base checkpoint/RNG options require an explicit online mode")
         for seed in seeds:
             OfficialProtocolAdapter.arguments(config, seed, "<DINO_FULL_CHECKPOINT>")
-        if args.action == "smoke":
-            from dean_integration.smoke import run_smoke
-            print(json.dumps(run_smoke(checkout), indent=2))
-            return 0
         report = {"config": config, "config_sha256": config_digest(config),
                   "environment_spec_sha256": sha256(ROOT / "environments/dean/environment.yml"),
                   "checkout": str(checkout), "seeds": seeds,
@@ -108,8 +104,21 @@ def main():
                       runtime_source_sha256={str(p.relative_to(ROOT)): sha256(p) for p in
                                              [Path(__file__).resolve(), *sorted((ROOT / "dean_integration").glob("*.py"))]})
         report["wrapper_arguments"] = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+        if args.selex_implementation == "reference_v1":
+            from dean_integration.selex_hierarchy_provider import provider_metadata, ensure_provider_ready
+            report.update(provider_metadata(selex))
         if args.action == "plan":
             print(json.dumps(report, indent=2))
+            return 0
+        if real_active:
+            # Phase-1 primary cannot enter asset loading, worker launch or training.
+            if selex.hierarchy_source == "hssk_online":
+                report.update(status="BLOCKED", error="HSSK implementation incomplete")
+                print(json.dumps(report, indent=2))
+            ensure_provider_ready(selex)
+        if args.action == "smoke":
+            from dean_integration.smoke import run_smoke
+            print(json.dumps(run_smoke(checkout), indent=2))
             return 0
         if not all((args.dataset_parent, args.checkpoint, args.output)):
             raise ValueError("verify/train require --dataset-parent, --checkpoint and --output")

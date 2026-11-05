@@ -3,6 +3,8 @@ from dataclasses import dataclass, asdict
 import math
 from numbers import Real
 from pathlib import Path
+import hashlib
+import logging
 
 import yaml
 
@@ -25,9 +27,26 @@ class ReferenceConfig:
     prototype_capacity: int = 512
     projector_lr: float = 1e-4
     epsilon: float = 1e-8
+    # Append metadata to preserve the historical numerical argument order.
+    # Programmatic ReferenceConfig fixtures explicitly denote the legacy ablation;
+    # the production research loader defaults to the separate HSSK YAML instead.
+    hierarchy_source: str = "dean_prototypes"
+    replay_capacity: int = 320
+    replay_per_class: int = 2
+    replay_selection_size: int = 32
+    insufficient_support_policy: str = "reuse_then_skip"
 
     def __post_init__(self):
+        if self.hierarchy_source not in ("hssk_online", "dean_prototypes"):
+            raise ValueError("Unknown hierarchy_source")
+        if self.insufficient_support_policy not in ("reuse_then_skip", "reuse_then_error"):
+            raise ValueError("Unknown insufficient_support_policy")
+        for name, expected in (("replay_capacity", 320), ("replay_per_class", 2), ("replay_selection_size", 32)):
+            if type(getattr(self, name)) is not int or getattr(self, name) != expected:
+                raise ValueError(f"{name} is locked to {expected} by the design contract")
         for name, value in asdict(self).items():
+            if name in ("hierarchy_source", "insufficient_support_policy", "replay_capacity", "replay_per_class", "replay_selection_size"):
+                continue
             if name in ("output_dim", "hidden_dim", "bottleneck_dim", "prototype_capacity"):
                 if type(value) is not int or value < 1:
                     raise ValueError(f"{name} must be a positive integer")
@@ -52,8 +71,15 @@ class ReferenceConfig:
 
 def load_reference_config(path=None):
     path = path or Path(__file__).resolve().parents[1] / "configs/dean/selex_online_reference_v1.yaml"
-    value = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    raw = Path(path).read_bytes()
+    value = yaml.safe_load(raw.decode("utf-8"))
     expected = set(asdict(ReferenceConfig()))
+    # Only this immutable historical blob may omit provider metadata. Hash Git
+    # normalized newlines to support both LF and Windows CRLF checkouts.
+    legacy_sha = "23c2bc5e0b19acd2468659adb76da1f145c9cffd29063cd8288f85e9ee6ac8d5"
+    if hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest() == legacy_sha:
+        logging.getLogger(__name__).warning("Historical config adapter: dean_prototypes ablation (not HSSK)")
+        value = {**asdict(ReferenceConfig()), **value}
     if not isinstance(value, dict) or set(value) != expected:
         raise ValueError("Reference v1 config fields must exactly match ReferenceConfig")
     return ReferenceConfig(**value)

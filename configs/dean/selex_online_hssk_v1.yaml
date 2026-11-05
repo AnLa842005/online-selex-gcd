@@ -1,0 +1,21 @@
+# Phase 1 primary: intentionally incomplete; cannot train.
+hierarchy_source: hssk_online
+replay_capacity: 320
+replay_per_class: 2
+replay_selection_size: 32
+insufficient_support_policy: reuse_then_skip
+# SelEx adapted to DEAN online discovery; corrected numerics, not offline reproduction.
+gamma: 0.1
+output_dim: 65536
+hidden_dim: 2048
+bottleneck_dim: 256
+sse_weight: 0.35
+smoothing: 1.0
+use_temperature: 1.0
+sse_temperature: 0.07
+base_temperature: 0.07
+hierarchy_decay: 0.5
+prototype_momentum: 0.9
+prototype_capacity: 512
+projector_lr: 1.0e-4
+epsilon: 1.0e-8

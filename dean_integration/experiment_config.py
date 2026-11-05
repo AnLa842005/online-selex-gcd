@@ -9,7 +9,7 @@ from .selex_online import SelExConfig
 def load_selex_config(path=None, implementation="synthetic"):
     if implementation == "reference_v1":
         from .selex_config import load_reference_config
-        return load_reference_config(path)
+        return load_reference_config(path or Path(__file__).resolve().parents[1] / "configs/dean/selex_online_hssk_v1.yaml")
     if implementation != "synthetic":
         raise ValueError("Unknown SelEx implementation")
     if path is None:

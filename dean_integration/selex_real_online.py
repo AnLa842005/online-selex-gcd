@@ -8,7 +8,8 @@ import torch
 
 from .provenance import write_json
 from .selex_config import SOURCE_SHA
-from .selex_hierarchy import EMAHierarchy, integer_ids
+from .selex_hierarchy import integer_ids
+from .selex_hierarchy_provider import create_provider, ensure_provider_ready, provider_metadata
 from .selex_projector import SelExProjector
 from .selex_reference import expertise_losses
 from .selex_rng import SelExRNG
@@ -91,8 +92,10 @@ class RealSelExOnline:
     def __init__(self, config, seed, output=None, base_classes=160):
         if config.gamma <= 0:
             raise ValueError("Gamma-zero must bypass real SelEx construction entirely")
+        ensure_provider_ready(config)  # Before projector/RNG/image work, never fallback.
+        self.provider = create_provider(config, base_classes)
         self.config, self.rng = config, SelExRNG(seed)
-        self.hierarchy = EMAHierarchy(config, base_classes)
+        self.hierarchy = self.provider.ema  # Exact legacy alias for the ablation.
         self.projector = None
         self.counters = Counter()
         self.batch, self.step = -1, 0
@@ -141,7 +144,7 @@ class RealSelExOnline:
                     features = model(inputs)
             else:
                 features = torch.empty(0, 768, device=self.device)
-            self.snapshot = self.hierarchy.update(features, labels[valid], images.sample_ids[valid])
+            self.snapshot = self.provider.build_legacy(features, labels[valid], images.sample_ids[valid])
         finally:
             for module, training in states:
                 module.training = training
@@ -228,6 +231,7 @@ class RealSelExOnline:
                 handle.write(json.dumps(dict(event=event, **values), allow_nan=False) + "\n")
             write_json(self.output / "selex_reference_summary.json",
                        dict(implementation="reference_v1", source_sha=SOURCE_SHA, config=asdict(self.config),
+                            **provider_metadata(self.config),
                             rng_seed=self.rng.seed, batch=self.batch, step=self.step,
                             counters=dict(self.counters), hierarchy_counters=dict(self.hierarchy.counters),
                             prototype_counts=dict(self.hierarchy.counts),
