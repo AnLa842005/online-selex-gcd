@@ -13,6 +13,28 @@ from dean_integration.adapters import OfficialProtocolAdapter
 from dean_integration.config import config_digest, load_config
 from dean_integration.external import bound_entrypoint, verify_checkout
 from dean_integration.preflight import check_assets, sha256
+from dean_integration.provenance import execute_run
+
+
+def worker_command(args, checkout, directory, seed):
+    command = [sys.executable, str(Path(__file__).resolve()), "--action", "worker",
+               "--config", str(args.config.resolve()), "--upstream", str(checkout),
+               "--dataset-parent", str(args.dataset_parent.resolve()),
+               "--checkpoint", str(args.checkpoint.resolve()), "--output", str(directory),
+               "--seed", str(seed)]
+    for flag, value in (("--base-checkpoint", args.base_checkpoint), ("--boundary-rng", args.boundary_rng),
+                        ("--selex-config", args.selex_config)):
+        if value is not None:
+            command += [flag, str(value.resolve())]
+    if args.online_only:
+        command.append("--online-only")
+    if getattr(args, "paired_online", False):
+        command += ["--paired-online", "--online_seed", str(args.online_seed)]
+    if getattr(args, "stream_manifest", None) is not None:
+        command += ["--stream-manifest", str(args.stream_manifest.resolve())]
+    if args.use_selex_online:
+        command.append("--use_selex_online")
+    return command
 
 
 def main():
@@ -24,13 +46,41 @@ def main():
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--seed", type=int, help="Default: all five official seeds")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--online-only", action="store_true", help="Strict replay; requires historical RNG sidecar")
+    modes.add_argument("--paired-online", action="store_true", help="New paired stream; skips base, resets online RNG")
+    parser.add_argument("--online_seed", type=int, help="Required seed for paired online boundary/stream")
+    parser.add_argument("--stream-manifest", type=Path, help="Read existing paired stream; omit to generate a new one")
+    parser.add_argument("--base-checkpoint", type=Path)
+    parser.add_argument("--boundary-rng", type=Path)
+    parser.add_argument("--use_selex_online", action="store_true", help="Experimental synthetic USE/SSE wiring")
+    parser.add_argument("--selex-config", type=Path)
     args = parser.parse_args()
+    for name in ("config", "upstream", "dataset_parent", "checkpoint", "output", "base_checkpoint", "boundary_rng", "selex_config", "stream_manifest"):
+        value = getattr(args, name)
+        if value is not None:
+            setattr(args, name, value.resolve())
     try:
         config = load_config(args.config)
         if config["mode"] != "official":
             raise ValueError("SSB draft is NOT RUN and cannot enter the official runner")
         checkout = verify_checkout(args.upstream)
         seeds = [args.seed] if args.seed is not None else config["seeds"]
+        from dean_integration.experiment_config import load_selex_config
+        selex = load_selex_config(args.selex_config)
+        if args.online_only and (args.seed is None or not args.base_checkpoint or not args.boundary_rng):
+            raise ValueError("--online-only requires explicit --seed, --base-checkpoint and --boundary-rng; never retrains base")
+        if args.paired_online:
+            from dean_integration.paired_stream import validate_online_seed
+            validate_online_seed(args.online_seed)
+            if args.seed is None or not args.base_checkpoint:
+                raise ValueError("--paired-online requires explicit --seed and --base-checkpoint; never retrains base")
+            if args.boundary_rng:
+                raise ValueError("--paired-online does not accept --boundary-rng; choose strict replay explicitly")
+        elif args.online_seed is not None or args.stream_manifest is not None:
+            raise ValueError("--online_seed and --stream-manifest require --paired-online")
+        if not (args.online_only or args.paired_online) and (args.base_checkpoint or args.boundary_rng):
+            raise ValueError("Base checkpoint/RNG options require an explicit online mode")
         for seed in seeds:
             OfficialProtocolAdapter.arguments(config, seed, "<DINO_FULL_CHECKPOINT>")
         if args.action == "smoke":
@@ -43,6 +93,15 @@ def main():
                   "arguments": {str(s): OfficialProtocolAdapter.arguments(
                       config, s, args.checkpoint or "<DINO_FULL_CHECKPOINT>") for s in seeds},
                   "status": "NOT RUN"}
+        report.update(upstream_sha=config["upstream"]["sha"],
+                      online_only=args.online_only, use_selex_online=args.use_selex_online,
+                      paired_online=args.paired_online,
+                      online_mode="paired" if args.paired_online else "strict_replay" if args.online_only else "full",
+                      online_seed=args.online_seed,
+                      selex_config=selex.__dict__,
+                      runtime_source_sha256={str(p.relative_to(ROOT)): sha256(p) for p in
+                                             [Path(__file__).resolve(), *sorted((ROOT / "dean_integration").glob("*.py"))]})
+        report["wrapper_arguments"] = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
         if args.action == "plan":
             print(json.dumps(report, indent=2))
             return 0
@@ -53,45 +112,64 @@ def main():
             raise ValueError("Inside this repo output must be below runs/dean")
         assets = check_assets(args.dataset_parent, args.checkpoint, output, upstream=checkout)
         report["preflight"] = assets
+        report["checkpoint_sha256"] = sha256(args.checkpoint)
+        boundary_rng = None
+        context = {"seed": args.seed, "upstream_sha": config["upstream"]["sha"],
+                   "config_sha256": report["config_sha256"], "dino_sha256": report["checkpoint_sha256"],
+                   "dataset_metadata": assets.get("cub", {}).get("metadata_sha256"),
+                   "arguments": report["arguments"].get(str(args.seed))}
+        paired = None
+        if args.online_only or args.paired_online:
+            report.update(base_checkpoint=str(args.base_checkpoint.resolve()),
+                          base_checkpoint_sha256=sha256(args.base_checkpoint))
+            if args.online_only:
+                from dean_integration.base_checkpoint import read_boundary
+                boundary_rng = read_boundary(args.base_checkpoint, args.boundary_rng, context)
+                report.update(boundary_rng=str(args.boundary_rng.resolve()), boundary_rng_sha256=sha256(args.boundary_rng))
+            else:
+                from dean_integration.paired_stream import PairedOnlineStream, read_manifest
+                paired_context = {**context, "online_seed": args.online_seed,
+                                  "base_checkpoint_sha256": report["base_checkpoint_sha256"]}
+                report["stream_context"] = paired_context
+                if args.stream_manifest:
+                    # Exact dataset IDs are checked when upstream builds the actual stream datasets.
+                    read_manifest(args.stream_manifest, paired_context, batch_size=64)
+                    report.update(input_stream_manifest=str(args.stream_manifest),
+                                  input_stream_manifest_sha256=sha256(args.stream_manifest))
+                paired = PairedOnlineStream(paired_context, output / "stream_manifest.json", args.stream_manifest)
+            if not assets["errors"]:
+                from dean_integration.base_checkpoint import audit_base
+                report["base_checkpoint_validation"] = audit_base(args.base_checkpoint, checkout)
         if args.action == "verify" or assets["errors"]:
             print(json.dumps(report, indent=2))
             return int(bool(assets["errors"]))
         if args.action == "worker":
             if args.seed is None:
                 raise ValueError("Internal worker requires a single seed")
-            # Runtime AST changes only the dataset-parent string. Source stays pristine.
-            code = bound_entrypoint(checkout, args.dataset_parent)
+            if any((output / name).exists() for name in ("Ours", "report_dict", "logs")):
+                raise ValueError("Worker output contains training artifacts; choose a fresh output directory")
+            code = bound_entrypoint(checkout, args.dataset_parent, online_only=args.online_only,
+                                    use_selex_online=args.use_selex_online, capture_boundary=True, paired_online=args.paired_online)
+            from dean_integration.base_checkpoint import load_base, restore_rng, save_boundary
+            from dean_integration.selex_online import augment_online_loss
             sys.path.insert(0, str(checkout))
             sys.argv = [str(checkout / "Ours_train_online.py")] + report["arguments"][str(args.seed)]
             os.chdir(output)
-            exec(code, {"__name__": "__main__", "__file__": str(checkout / "Ours_train_online.py")})
+            exec(code, {"__name__": "__main__", "__file__": str(checkout / "Ours_train_online.py"),
+                        "_dean_load_base": load_base, "_dean_restore": restore_rng,
+                        "_dean_save_boundary": save_boundary, "_dean_context": context,
+                        "_dean_base_path": str(args.base_checkpoint.resolve()) if args.base_checkpoint else None,
+                        "_dean_boundary_rng": boundary_rng, "_dean_augment": augment_online_loss,
+                        "_dean_paired": paired,
+                        "_dean_selex_config": selex})
             return 0
-        run = output / "official/cub_v0"
+        namespace = ("experiments/cub_paired_v1" if args.paired_online else
+                     "experiments/cub_online_v1" if args.online_only or args.use_selex_online else "official/cub_v0")
+        run = output / namespace
         run.mkdir(parents=True, exist_ok=False)
-        (run / "provenance.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-        for seed in seeds:
-            seed_dir = run / f"seed{seed}"
-            seed_dir.mkdir()
-            command = [sys.executable, str(Path(__file__).resolve()), "--action", "worker",
-                       "--config", str(args.config.resolve()), "--upstream", str(checkout),
-                       "--dataset-parent", str(args.dataset_parent.resolve()),
-                       "--checkpoint", str(args.checkpoint.resolve()), "--output", str(seed_dir),
-                       "--seed", str(seed)]
-            status = {"seed": seed, "status": "STARTED", "command": command}
-            status_path = seed_dir / "execution.json"
-            status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
-            try:
-                with (seed_dir / "console.log").open("w", encoding="utf-8") as log:
-                    result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
-                status.update(status="COMPLETE" if result.returncode == 0 else "FAILED", returncode=result.returncode)
-            except KeyboardInterrupt:
-                status.update(status="INTERRUPTED")
-                raise
-            finally:
-                status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
-            if result.returncode:
-                return result.returncode
-        return 0
+        jobs = [(seed, run / f"seed{seed}", worker_command(args, checkout, run / f"seed{seed}", seed)) for seed in seeds]
+        return execute_run(run, report, jobs,
+                           lambda command, **kw: subprocess.run(command, stderr=subprocess.STDOUT, **kw))
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"DEAN error: {exc}\n")
 

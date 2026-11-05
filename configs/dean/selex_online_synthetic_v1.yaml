@@ -1,0 +1,3 @@
+# Synthetic interface fixtures, not paper-faithful USE/SSE implementations.
+use_weight: 0.1
+sse_weight: 0.1
