@@ -34,6 +34,8 @@ def worker_command(args, checkout, directory, seed):
         command += ["--stream-manifest", str(args.stream_manifest.resolve())]
     if args.use_selex_online:
         command.append("--use_selex_online")
+    if getattr(args, "selex_implementation", "synthetic") != "synthetic":
+        command += ["--selex-implementation", args.selex_implementation]
     return command
 
 
@@ -53,7 +55,9 @@ def main():
     parser.add_argument("--stream-manifest", type=Path, help="Read existing paired stream; omit to generate a new one")
     parser.add_argument("--base-checkpoint", type=Path)
     parser.add_argument("--boundary-rng", type=Path)
-    parser.add_argument("--use_selex_online", action="store_true", help="Experimental synthetic USE/SSE wiring")
+    parser.add_argument("--use_selex_online", action="store_true", help="Enable the explicitly selected SelEx implementation")
+    parser.add_argument("--selex-implementation", choices=["synthetic", "reference_v1"], default="synthetic",
+                        help="Synthetic scaffolding or SelEx adapted to DEAN online discovery")
     parser.add_argument("--selex-config", type=Path)
     args = parser.parse_args()
     for name in ("config", "upstream", "dataset_parent", "checkpoint", "output", "base_checkpoint", "boundary_rng", "selex_config", "stream_manifest"):
@@ -67,7 +71,8 @@ def main():
         checkout = verify_checkout(args.upstream)
         seeds = [args.seed] if args.seed is not None else config["seeds"]
         from dean_integration.experiment_config import load_selex_config
-        selex = load_selex_config(args.selex_config)
+        selex = load_selex_config(args.selex_config, args.selex_implementation)
+        real_active = args.use_selex_online and args.selex_implementation == "reference_v1" and selex.gamma > 0
         if args.online_only and (args.seed is None or not args.base_checkpoint or not args.boundary_rng):
             raise ValueError("--online-only requires explicit --seed, --base-checkpoint and --boundary-rng; never retrains base")
         if args.paired_online:
@@ -98,6 +103,7 @@ def main():
                       paired_online=args.paired_online,
                       online_mode="paired" if args.paired_online else "strict_replay" if args.online_only else "full",
                       online_seed=args.online_seed,
+                      selex_implementation=args.selex_implementation, real_selex_active=real_active,
                       selex_config=selex.__dict__,
                       runtime_source_sha256={str(p.relative_to(ROOT)): sha256(p) for p in
                                              [Path(__file__).resolve(), *sorted((ROOT / "dean_integration").glob("*.py"))]})
@@ -148,10 +154,16 @@ def main():
                 raise ValueError("Internal worker requires a single seed")
             if any((output / name).exists() for name in ("Ours", "report_dict", "logs")):
                 raise ValueError("Worker output contains training artifacts; choose a fresh output directory")
+            synthetic_active = args.use_selex_online and args.selex_implementation == "synthetic"
             code = bound_entrypoint(checkout, args.dataset_parent, online_only=args.online_only,
-                                    use_selex_online=args.use_selex_online, capture_boundary=True, paired_online=args.paired_online)
+                                    use_selex_online=synthetic_active, reference_selex=real_active,
+                                    capture_boundary=True, paired_online=args.paired_online)
             from dean_integration.base_checkpoint import load_base, restore_rng, save_boundary
             from dean_integration.selex_online import augment_online_loss
+            real = None
+            if real_active:
+                from dean_integration.selex_real_online import RealSelExOnline
+                real = RealSelExOnline(selex, args.online_seed if args.paired_online else args.seed, output)
             sys.path.insert(0, str(checkout))
             sys.argv = [str(checkout / "Ours_train_online.py")] + report["arguments"][str(args.seed)]
             os.chdir(output)
@@ -161,6 +173,7 @@ def main():
                         "_dean_base_path": str(args.base_checkpoint.resolve()) if args.base_checkpoint else None,
                         "_dean_boundary_rng": boundary_rng, "_dean_augment": augment_online_loss,
                         "_dean_paired": paired,
+                        "_dean_real": real,
                         "_dean_selex_config": selex})
             return 0
         namespace = ("experiments/cub_paired_v1" if args.paired_online else

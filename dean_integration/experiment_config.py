@@ -6,7 +6,12 @@ import yaml
 from .selex_online import SelExConfig
 
 
-def load_selex_config(path=None):
+def load_selex_config(path=None, implementation="synthetic"):
+    if implementation == "reference_v1":
+        from .selex_config import load_reference_config
+        return load_reference_config(path)
+    if implementation != "synthetic":
+        raise ValueError("Unknown SelEx implementation")
     if path is None:
         return SelExConfig()
     value = yaml.safe_load(Path(path).read_text(encoding="utf-8"))

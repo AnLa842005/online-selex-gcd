@@ -13,7 +13,9 @@ def exactly(tree, predicate, description):
     return matches[0]
 
 
-def patch_experiment(tree, *, online_only=False, use_selex_online=False, paired_online=False):
+def patch_experiment(tree, *, online_only=False, use_selex_online=False, paired_online=False, reference_selex=False):
+    if use_selex_online and reference_selex:
+        raise ValueError("Synthetic and reference SelEx hooks are mutually exclusive")
     if online_only and paired_online:
         raise ValueError("Strict replay and paired online are mutually exclusive")
     if online_only or paired_online:
@@ -36,7 +38,37 @@ def patch_experiment(tree, *, online_only=False, use_selex_online=False, paired_
         original = loss.value
         loss.value = ast.parse("_dean_augment(_official_loss, feats, logits, on_y, header_now.head.weight, enabled=True, config=_dean_selex_config)", mode="eval").body
         loss.value.args[0] = original
+    if reference_selex:
+        patch_real_selex(tree)
     return tree
+
+
+def insert_after(tree, statement, text):
+    for parent in ast.walk(tree):
+        for _, value in ast.iter_fields(parent):
+            if isinstance(value, list):
+                for i, node in enumerate(value):
+                    if node is statement:
+                        value[i+1:i+1] = ast.parse(text).body
+                        return
+    raise ValueError("Audited insertion statement has no containing block")
+
+
+def patch_real_selex(tree):
+    session = exactly(tree, lambda n: isinstance(n, ast.Assign) and source(n) == "model_now = model_now.cuda()", "student CUDA initialization")
+    expansion = exactly(tree, lambda n: isinstance(n, ast.Expr) and source(n) == "header_now.update(nb_classes_now=nb_classes_now)", "classifier expansion")
+    loss = exactly(tree, lambda n: isinstance(n, ast.Assign) and source(n) == "loss = ce_loss + args.energy_hp * energy_loss", "online loss")
+    groups = [n for n in ast.walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
+              and isinstance(n.value.func, ast.Attribute) and source(n.value.func) == "opt.add_param_group"]
+    if len(groups) != 2:
+        raise ValueError("Expected both audited DEAN classifier optimizer additions")
+    insert_after(tree, session, "_dean_real.start_session(model_now)")
+    insert_after(tree, expansion, "_dean_real.prepare_batch(model_now, dset_tr_now_m, dataset.utils.make_transform, nb_classes_now)")
+    for statement in groups:
+        insert_after(tree, statement, "_dean_real.attach_optimizer(opt, header_now)")
+    original = loss.value
+    loss.value = ast.parse("_dean_real.augment(_original, ce_loss, args.energy_hp * energy_loss, model_now, on_y, on_z)", mode="eval").body
+    loss.value.args[0] = original
 
 
 def instrument_boundary(tree, *, online_only=False, paired_online=False):

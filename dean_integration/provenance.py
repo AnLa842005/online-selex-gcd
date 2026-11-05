@@ -37,6 +37,25 @@ def execute_run(run, report, jobs, runner):
             try:
                 with (directory / "console.log").open("w", encoding="utf-8") as log:
                     code = runner(command, stdout=log).returncode
+                summary_path = directory / "selex_reference_summary.json"
+                if report.get("real_selex_active"):
+                    if summary_path.is_file():
+                        try:
+                            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                            if not isinstance(summary, dict) or summary.get("implementation") != "reference_v1":
+                                raise ValueError("Invalid real SelEx telemetry identity")
+                            if "selex_config" in report and summary.get("config") != report["selex_config"]:
+                                raise ValueError("Real SelEx telemetry config differs from provenance")
+                            if code == 0 and (summary.get("step", 0) < 1 or not summary.get("optimizer_groups")):
+                                raise ValueError("Real SelEx worker completed without optimizer updates")
+                            status["selex_reference"] = summary
+                            status["selex_reference_summary_sha256"] = sha256(summary_path)
+                        except (OSError, ValueError, TypeError) as exc:
+                            if code == 0:
+                                raise
+                            status["selex_reference_error"] = str(exc)
+                    elif code == 0:
+                        raise ValueError("Real SelEx worker completed without research telemetry")
                 manifest = directory / "stream_manifest.json"
                 if report.get("online_mode") == "paired":
                     if manifest.is_file():
