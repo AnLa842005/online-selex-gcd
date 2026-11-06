@@ -8,15 +8,43 @@ class BoundedSmokeComplete(Exception):
     pass
 
 
+class SmokeBatchLimitExceeded(RuntimeError):
+    pass
+
+
 class SmokeBudget:
     def __init__(self, updates):
         if type(updates) is not int or not 1 <= updates <= 2:
             raise ValueError("Bounded online smoke requires 1..2 optimizer updates")
         self.limit, self.steps = updates, 0
+        self.max_incoming_batches = 1
+        self.incoming_batches_started = 0
+        self.source_batches = []
+        self.batch_limit_failure_reason = None
         self.engine, self.output, self.metadata = None, None, {}
         self.updates, self.hierarchy = [], None
         self.tick, self.hierarchy_tick = None, None
         self.peak_allocated, self.peak_reserved = 0, 0
+
+    def batch_started(self, session=None, batch=None):
+        if self.incoming_batches_started >= self.max_incoming_batches:
+            self.batch_limit_failure_reason = "Attempted second incoming batch before smoke completion"
+            self._record("batch_limit_exceeded", attempted_session=session, attempted_batch=batch,
+                         exit_code=1, **self.batch_summary())
+            raise SmokeBatchLimitExceeded(self.batch_limit_failure_reason)
+        self.incoming_batches_started += 1
+        self.source_batches.append(dict(session=session, batch=batch))
+        self._record("batch_started", **self.batch_summary())
+
+    def batch_summary(self):
+        return dict(incoming_batches_started=self.incoming_batches_started,
+                    source_batches=list(self.source_batches),
+                    requested_optimizer_updates=self.limit, completed_optimizer_updates=self.steps,
+                    batch_limit_failure_reason=self.batch_limit_failure_reason)
+
+    def require_active_batch(self):
+        if self.incoming_batches_started != 1 or self.batch_limit_failure_reason:
+            raise SmokeBatchLimitExceeded("Smoke update requires exactly one admitted incoming batch")
 
     def bind_engine(self, engine, metadata):
         self.engine, self.metadata = engine, dict(metadata)
@@ -62,6 +90,7 @@ class SmokeBudget:
             replay_selection_hash=engine.replay_manager.selection.selection_hash if engine.replay_manager else None)
 
     def update_started(self, scope="full_update"):
+        self.require_active_batch()
         if self.steps >= self.limit:
             raise ValueError("Smoke budget exhausted before another optimizer update")
         self._cuda(reset=True)
@@ -82,13 +111,14 @@ class SmokeBudget:
         except Exception:
             cuda = dict(cuda_peak_allocated=self.peak_allocated, cuda_peak_reserved=self.peak_reserved)
         self._record("failed", exit_code=1, error_type=type(error).__name__, error=str(error),
-                     oom=isinstance(error, torch.cuda.OutOfMemoryError), **cuda)
+                     oom=isinstance(error, torch.cuda.OutOfMemoryError), **self.batch_summary(), **cuda)
 
     def summary(self):
         return dict(hierarchy=self.hierarchy, updates=self.updates, cuda_peak_allocated=self.peak_allocated,
-                    cuda_peak_reserved=self.peak_reserved)
+                    cuda_peak_reserved=self.peak_reserved, **self.batch_summary())
 
     def step_completed(self):
+        self.require_active_batch()
         if self.engine is not None:
             cuda = self._cuda()
             elapsed = time.perf_counter()-self.tick if self.tick is not None else None
@@ -102,5 +132,5 @@ class SmokeBudget:
             self.tick = None
         self.steps += 1
         if self.steps >= self.limit:
-            self._record("complete", exit_code=0, updates=self.steps, **self._cuda())
+            self._record("complete", exit_code=0, updates=self.steps, **self.batch_summary(), **self._cuda())
             raise BoundedSmokeComplete("Bounded smoke update budget completed")

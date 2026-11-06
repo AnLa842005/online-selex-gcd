@@ -312,8 +312,10 @@ class ManifestAndGateTests(unittest.TestCase):
         from dean_integration.provenance import execute_run
         valid = dict(implementation="reference_v1", step=1, optimizer_groups=[dict(name="selex_projector")],
                      last_event="bounded_smoke_complete", full_train_blocked=True,
+                     smoke_diagnostics=dict(incoming_batches_started=1, requested_optimizer_updates=1,
+                                            completed_optimizer_updates=1, batch_limit_failure_reason=None),
                      hierarchy_state=dict(status="BUILD", memory_hash="m", snapshot_hash="s"))
-        for field in (None, "last_event", "hierarchy_state"):
+        for field in (None, "last_event", "hierarchy_state", "smoke_diagnostics"):
             with tempfile.TemporaryDirectory() as tmp:
                 run = Path(tmp); child = run/"seed1"
                 summary = deepcopy(valid)
@@ -346,6 +348,7 @@ root=Path(_dean_real.output).parent/'CUB_200_2011'
 labelled=SimpleNamespace(root=root,base_folder='images',uq_idxs=np.array(sorted(_dean_real.replay_manager.eligibility._records)),
     loader=lambda path:basis(1,int(Path(path).parent.name[5:]))[0])
 _dean_real.configure_replay_from_cub(labelled,lambda is_train:(lambda x:x+torch.rand_like(x)*.001) if is_train else (lambda x:x))
+_dean_smoke.batch_started(session=0,batch=0)
 images=CurrentBatchImages([100,101,102,103],lambda key:basis(1,32+key%2)[0],lambda x:x+torch.rand_like(x)*.001,lambda x:x)
 _dean_real.prepare(model,images,None,2)
 opt=torch.optim.AdamW(model.parameters());opt.add_param_group(dict(params=head.parameters()));_dean_real.attach_optimizer(opt,head)
@@ -426,7 +429,7 @@ raise AssertionError('unbounded worker')
         ensure_provider_ready(cfg(), bounded_smoke=True)
         for n in (0, 3, 16, True):
             with self.assertRaises(ValueError): SmokeBudget(n)
-        budget = SmokeBudget(2); budget.step_completed()
+        budget = SmokeBudget(2); budget.batch_started(0, 0); budget.step_completed()
         with self.assertRaises(BoundedSmokeComplete): budget.step_completed()
         self.assertEqual(budget.steps, 2)
 

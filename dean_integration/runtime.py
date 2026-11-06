@@ -95,6 +95,19 @@ def instrument_boundary(tree, *, online_only=False, paired_online=False):
 
 def patch_bounded_smoke(tree):
     """Pinned smoke-only changes: suppress full base eval, terminate post-step."""
+    incoming = exactly(tree, lambda n: isinstance(n, ast.For)
+                       and source(n.target) == "(batch_idx, (on_x, on_y, on_z))"
+                       and source(n.iter) == "pbar", "smoke incoming batch loop")
+    session_loop = exactly(tree, lambda n: isinstance(n, ast.For)
+                           and source(n.target) == "(sess_idx, (inc_tr_dataset, inc_ev_dataset))"
+                           and source(n.iter) == "enumerate(zip(dt_train_inc_unlabelled, dt_test_inc_unlabelled))",
+                           "smoke session loop")
+    if incoming not in session_loop.body:
+        raise ValueError("Audited incoming batch loop is not directly inside session loop")
+    incoming_index = session_loop.body.index(incoming)
+    if incoming_index == 0 or source(session_loop.body[incoming_index-1]) != "pbar = enumerate(dlod_tr_now)":
+        raise ValueError("Audited incoming batch stream boundary changed")
+    incoming.body[:0] = ast.parse("_dean_smoke.batch_started(session=sess_idx, batch=batch_idx)").body
     session = exactly(tree, lambda n: isinstance(n, ast.Assign) and source(n) == "model_now = model_now.cuda()", "smoke student")
     insert_after(tree, session, "_dean_real.configure_replay_from_cub(dt_train_labelled, dataset.utils.make_transform)")
     loop = exactly(tree, lambda n: isinstance(n, ast.For) and source(n.iter) == "range(0, args.inc_epochs)", "smoke inner epochs")

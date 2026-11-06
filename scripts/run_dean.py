@@ -165,7 +165,7 @@ def main():
             replay_manager.admit(eligible.entry(k) for k in sorted(eligible._records))
             report["verified_replay"] = dict(canonical_sha256=digest(replay_record),
                 dataset=eligible.dataset_fingerprint, split=eligible.split_fingerprint, source=replay_record["source"])
-            report["bounded_smoke"] = dict(incoming_batches=1, optimizer_updates=args.smoke_updates, full_train_blocked=True)
+            report["bounded_smoke"] = dict(incoming_batches=smoke_budget.max_incoming_batches, optimizer_updates=args.smoke_updates, full_train_blocked=True)
         if args.online_only or args.paired_online:
             report.update(base_checkpoint=str(args.base_checkpoint.resolve()),
                           base_checkpoint_sha256=sha256(args.base_checkpoint))
@@ -239,9 +239,13 @@ def main():
                     real._event("bounded_smoke_complete", updates=smoke_budget.steps, full_train_blocked=True)
                 except BaseException as exc:
                     smoke_budget.failed(exc)
+                    real._event("bounded_smoke_failed", exit_code=1, **smoke_budget.batch_summary())
                     raise
                 else:
-                    raise ValueError("Smoke worker exited without audited post-step budget termination")
+                    error = ValueError("Smoke worker exited without audited post-step budget termination")
+                    smoke_budget.failed(error)
+                    real._event("bounded_smoke_failed", exit_code=1, **smoke_budget.batch_summary())
+                    raise error
             else:
                 exec(code, namespace_values)
             return 0

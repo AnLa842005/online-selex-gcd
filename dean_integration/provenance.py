@@ -51,6 +51,12 @@ def execute_run(run, report, jobs, runner):
                             if code == 0 and report.get("hierarchy_source") == "hssk_online":
                                 expected_updates = report.get("bounded_smoke", {}).get("optimizer_updates")
                                 hierarchy = summary.get("hierarchy_state", {})
+                                budget = summary.get("smoke_diagnostics", {})
+                                if (budget.get("incoming_batches_started") != 1
+                                        or budget.get("requested_optimizer_updates") != expected_updates
+                                        or budget.get("completed_optimizer_updates") != expected_updates
+                                        or budget.get("batch_limit_failure_reason") is not None):
+                                    raise ValueError("HSSK smoke missing valid runtime batch budget")
                                 if (summary.get("step") != expected_updates or summary.get("last_event") != "bounded_smoke_complete"
                                         or summary.get("full_train_blocked") is not True
                                         or hierarchy.get("status") not in ("BUILD", "REUSE", "SKIP")
