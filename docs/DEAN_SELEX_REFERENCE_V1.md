@@ -1,5 +1,12 @@
 # SelEx adapted to DEAN online discovery: reference v1
 
+**Historical prototype ablation:** this release is the **SelEx-inspired prototype
+hierarchy**, selected explicitly by the frozen reference YAML. It is not HSSK
+leaf discovery or a full Self-Ex reproduction. The primary **Online HSSK + USE/SSE**
+path is described in [the Phase-3 runbook](DEAN_SELEX_HSSK_PHASE3.md), with status
+`smoke_ready, full_train_blocked`. The numerical projector/loss kernels below
+are shared by both modes; the original release evidence is preserved.
+
 This implementation follows the reviewed design in
 `DEAN_SELEX_REAL_INTEGRATION_PLAN.md`. The design-only commit is
 `d2fd3f20dece59b4487be0bcda42c764c24d8f2b` with message

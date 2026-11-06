@@ -48,6 +48,15 @@ def execute_run(run, report, jobs, runner):
                                 raise ValueError("Real SelEx telemetry config differs from provenance")
                             if code == 0 and (summary.get("step", 0) < 1 or not summary.get("optimizer_groups")):
                                 raise ValueError("Real SelEx worker completed without optimizer updates")
+                            if code == 0 and report.get("hierarchy_source") == "hssk_online":
+                                expected_updates = report.get("bounded_smoke", {}).get("optimizer_updates")
+                                hierarchy = summary.get("hierarchy_state", {})
+                                if (summary.get("step") != expected_updates or summary.get("last_event") != "bounded_smoke_complete"
+                                        or summary.get("full_train_blocked") is not True
+                                        or hierarchy.get("status") not in ("BUILD", "REUSE", "SKIP")
+                                        or not hierarchy.get("memory_hash")
+                                        or (hierarchy.get("status") != "SKIP" and not hierarchy.get("snapshot_hash"))):
+                                    raise ValueError("HSSK smoke missing bounded completion/hierarchy provenance")
                             status["selex_reference"] = summary
                             status["selex_reference_summary_sha256"] = sha256(summary_path)
                         except (OSError, ValueError, TypeError) as exc:

@@ -16,7 +16,8 @@ from torch.nn import functional as F
 
 from dean_integration.config import ROOT
 from dean_integration.selex_config import SOURCE_SHA
-from dean_integration.selex_hierarchy_provider import HSSKImplementationIncomplete, OnlineHSSKHierarchyProvider, digest
+from dean_integration.selex_hierarchy_provider import FullTrainingBlocked, ensure_provider_ready, digest
+from dean_integration.selex_config import ReferenceConfig
 from dean_integration.selex_hssk_online import (
     CandidateFit, HSSKLeafConfig, HSSKLeafFitter, HSSKPrototypeMemory,
     LeafFitStatus, VerifiedReplayFeatures, candidate_counts, checked_rows)
@@ -310,8 +311,8 @@ class LeafFitTests(unittest.TestCase):
 
     def test_production_provider_stays_fail_closed(self):
         self.fit(torch.repeat_interleave(basis(2), 2, dim=0))
-        with self.assertRaisesRegex(HSSKImplementationIncomplete, "HSSK implementation incomplete"):
-            OnlineHSSKHierarchyProvider().build(None)
+        with self.assertRaisesRegex(FullTrainingBlocked, "Phase 4"):
+            ensure_provider_ready(ReferenceConfig(hierarchy_source="hssk_online"))
 
     def test_locked_numerical_config_validation(self):
         for kw in (dict(max_free=40), dict(min_support=1), dict(k_penalty=.01), dict(momentum=.8),

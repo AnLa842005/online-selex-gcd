@@ -17,7 +17,8 @@ from dean_integration.provenance import execute_run
 
 
 def worker_command(args, checkout, directory, seed):
-    command = [sys.executable, str(Path(__file__).resolve()), "--action", "worker",
+    bounded = getattr(args, "action", None) == "online-smoke"
+    command = [sys.executable, str(Path(__file__).resolve()), "--action", "smoke-worker" if bounded else "worker",
                "--config", str(args.config.resolve()), "--upstream", str(checkout),
                "--dataset-parent", str(args.dataset_parent.resolve()),
                "--checkpoint", str(args.checkpoint.resolve()), "--output", str(directory),
@@ -36,12 +37,16 @@ def worker_command(args, checkout, directory, seed):
         command.append("--use_selex_online")
     if getattr(args, "selex_implementation", "synthetic") != "synthetic":
         command += ["--selex-implementation", args.selex_implementation]
+    if bounded:
+        command += ["--smoke-updates", str(args.smoke_updates)]
+        if args.replay_manifest is not None:
+            command += ["--replay-manifest", str(args.replay_manifest), "--replay-manifest-sha256", args.replay_manifest_sha256]
     return command
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=["plan", "verify", "smoke", "train", "worker"], default="plan")
+    parser.add_argument("--action", choices=["plan", "verify", "smoke", "train", "worker", "online-smoke", "smoke-worker"], default="plan")
     parser.add_argument("--config", type=Path, default=ROOT / "configs/dean/cub_official_v0.yaml")
     parser.add_argument("--upstream", type=Path, required=True)
     parser.add_argument("--dataset-parent", type=Path)
@@ -59,8 +64,11 @@ def main():
     parser.add_argument("--selex-implementation", choices=["synthetic", "reference_v1"], default="synthetic",
                         help="Synthetic scaffolding or SelEx adapted to DEAN online discovery")
     parser.add_argument("--selex-config", type=Path)
+    parser.add_argument("--smoke-updates", type=int, default=1)
+    parser.add_argument("--replay-manifest", type=Path)
+    parser.add_argument("--replay-manifest-sha256")
     args = parser.parse_args()
-    for name in ("config", "upstream", "dataset_parent", "checkpoint", "output", "base_checkpoint", "boundary_rng", "selex_config", "stream_manifest"):
+    for name in ("config", "upstream", "dataset_parent", "checkpoint", "output", "base_checkpoint", "boundary_rng", "selex_config", "stream_manifest", "replay_manifest"):
         value = getattr(args, name)
         if value is not None:
             setattr(args, name, value.resolve())
@@ -73,6 +81,14 @@ def main():
         from dean_integration.experiment_config import load_selex_config
         selex = load_selex_config(args.selex_config, args.selex_implementation)
         real_active = args.use_selex_online and args.selex_implementation == "reference_v1" and selex.gamma > 0
+        bounded = args.action in ("online-smoke", "smoke-worker")
+        if bounded:
+            from dean_integration.selex_smoke_gate import SmokeBudget
+            smoke_budget = SmokeBudget(args.smoke_updates)
+            if not real_active or selex.hierarchy_source != "hssk_online" or not args.paired_online:
+                raise ValueError("Online smoke requires active hssk_online and explicit paired mode")
+        elif args.replay_manifest is not None or args.replay_manifest_sha256 is not None or args.smoke_updates != 1:
+            raise ValueError("Replay manifest/smoke budget options require explicit online-smoke")
         if args.online_only and (args.seed is None or not args.base_checkpoint or not args.boundary_rng):
             raise ValueError("--online-only requires explicit --seed, --base-checkpoint and --boundary-rng; never retrains base")
         if args.paired_online:
@@ -101,9 +117,13 @@ def main():
                       online_seed=args.online_seed,
                       selex_implementation=args.selex_implementation, real_selex_active=real_active,
                       selex_config=selex.__dict__,
+                      selex_config_sha256=config_digest(selex.__dict__),
                       runtime_source_sha256={str(p.relative_to(ROOT)): sha256(p) for p in
                                              [Path(__file__).resolve(), *sorted((ROOT / "dean_integration").glob("*.py"))]})
         report["wrapper_arguments"] = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+        if bounded:
+            report.update(git_sha=subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
+                          git_dirty=bool(subprocess.check_output(["git", "-C", str(ROOT), "status", "--porcelain"], text=True).strip()))
         if args.selex_implementation == "reference_v1":
             from dean_integration.selex_hierarchy_provider import provider_metadata, ensure_provider_ready
             report.update(provider_metadata(selex))
@@ -111,11 +131,10 @@ def main():
             print(json.dumps(report, indent=2))
             return 0
         if real_active:
-            # Phase-1 primary cannot enter asset loading, worker launch or training.
-            if selex.hierarchy_source == "hssk_online":
-                report.update(status="BLOCKED", error="HSSK implementation incomplete")
+            if selex.hierarchy_source == "hssk_online" and not bounded:
+                report.update(status="BLOCKED", error="Full training blocked: Phase 4 resume/provenance readiness required")
                 print(json.dumps(report, indent=2))
-            ensure_provider_ready(selex)
+            ensure_provider_ready(selex, bounded)
         if args.action == "smoke":
             from dean_integration.smoke import run_smoke
             print(json.dumps(run_smoke(checkout), indent=2))
@@ -134,6 +153,19 @@ def main():
                    "dataset_metadata": assets.get("cub", {}).get("metadata_sha256"),
                    "arguments": report["arguments"].get(str(args.seed))}
         paired = None
+        replay_manager = None
+        replay_record = None
+        if bounded and not assets["errors"]:
+            from dean_integration.selex_replay_manifest import verified_manifest
+            from dean_integration.selex_labeled_replay import VerifiedLabeledReplay
+            from dean_integration.selex_hierarchy_provider import digest
+            replay_record, eligible = verified_manifest(args.dataset_parent/"CUB_200_2011", args.replay_manifest,
+                                                         args.replay_manifest_sha256)
+            replay_manager = VerifiedLabeledReplay(eligible)
+            replay_manager.admit(eligible.entry(k) for k in sorted(eligible._records))
+            report["verified_replay"] = dict(canonical_sha256=digest(replay_record),
+                dataset=eligible.dataset_fingerprint, split=eligible.split_fingerprint, source=replay_record["source"])
+            report["bounded_smoke"] = dict(incoming_batches=1, optimizer_updates=args.smoke_updates, full_train_blocked=True)
         if args.online_only or args.paired_online:
             report.update(base_checkpoint=str(args.base_checkpoint.resolve()),
                           base_checkpoint_sha256=sha256(args.base_checkpoint))
@@ -158,7 +190,7 @@ def main():
         if args.action == "verify" or assets["errors"]:
             print(json.dumps(report, indent=2))
             return int(bool(assets["errors"]))
-        if args.action == "worker":
+        if args.action in ("worker", "smoke-worker"):
             if args.seed is None:
                 raise ValueError("Internal worker requires a single seed")
             if any((output / name).exists() for name in ("Ours", "report_dict", "logs")):
@@ -166,29 +198,63 @@ def main():
             synthetic_active = args.use_selex_online and args.selex_implementation == "synthetic"
             code = bound_entrypoint(checkout, args.dataset_parent, online_only=args.online_only,
                                     use_selex_online=synthetic_active, reference_selex=real_active,
-                                    capture_boundary=True, paired_online=args.paired_online)
+                                    capture_boundary=True, paired_online=args.paired_online,
+                                    **({"bounded_smoke": True} if bounded else {}))
             from dean_integration.base_checkpoint import load_base, restore_rng, save_boundary
             from dean_integration.selex_online import augment_online_loss
             real = None
             if real_active:
                 from dean_integration.selex_real_online import RealSelExOnline
-                real = RealSelExOnline(selex, args.online_seed if args.paired_online else args.seed, output)
+                options = {}
+                if bounded:
+                    from dean_integration.selex_replay_manifest import write_manifest
+                    write_manifest(output/"replay_eligibility.json", replay_record)
+                    options = dict(bounded_smoke=True, replay_manager=replay_manager, context=dict(
+                        model_lineage=report["base_checkpoint_sha256"], dataset=report["verified_replay"]["dataset"],
+                        feature_version="dino768-eval-v1", seed_protocol="paired-hssk-v1"))
+                real = RealSelExOnline(selex, args.online_seed if args.paired_online else args.seed, output, **options)
+                if bounded:
+                    smoke_budget.bind_engine(real, dict(git_sha=report["git_sha"], upstream_sha=report["upstream_sha"],
+                        config_sha256=report["config_sha256"], selex_config_sha256=report["selex_config_sha256"],
+                        checkpoint_sha256=report["checkpoint_sha256"], base_checkpoint_sha256=report["base_checkpoint_sha256"],
+                        replay_manifest_sha256=report["verified_replay"]["canonical_sha256"],
+                        dataset_sha256=report["verified_replay"]["dataset"], seed=args.seed, online_seed=args.online_seed))
             sys.path.insert(0, str(checkout))
             sys.argv = [str(checkout / "Ours_train_online.py")] + report["arguments"][str(args.seed)]
             os.chdir(output)
-            exec(code, {"__name__": "__main__", "__file__": str(checkout / "Ours_train_online.py"),
+            namespace_values = {"__name__": "__main__", "__file__": str(checkout / "Ours_train_online.py"),
                         "_dean_load_base": load_base, "_dean_restore": restore_rng,
                         "_dean_save_boundary": save_boundary, "_dean_context": context,
                         "_dean_base_path": str(args.base_checkpoint.resolve()) if args.base_checkpoint else None,
                         "_dean_boundary_rng": boundary_rng, "_dean_augment": augment_online_loss,
                         "_dean_paired": paired,
                         "_dean_real": real,
-                        "_dean_selex_config": selex})
+                        "_dean_selex_config": selex}
+            if bounded:
+                namespace_values["_dean_smoke"] = smoke_budget
+                from dean_integration.selex_smoke_gate import BoundedSmokeComplete
+                try:
+                    exec(code, namespace_values)
+                except BoundedSmokeComplete:
+                    real._event("bounded_smoke_complete", updates=smoke_budget.steps, full_train_blocked=True)
+                except BaseException as exc:
+                    smoke_budget.failed(exc)
+                    raise
+                else:
+                    raise ValueError("Smoke worker exited without audited post-step budget termination")
+            else:
+                exec(code, namespace_values)
             return 0
-        namespace = ("experiments/cub_paired_v1" if args.paired_online else
+        namespace = ("experiments/cub_hssk_smoke_v1" if bounded else "experiments/cub_paired_v1" if args.paired_online else
                      "experiments/cub_online_v1" if args.online_only or args.use_selex_online else "official/cub_v0")
         run = output / namespace
         run.mkdir(parents=True, exist_ok=False)
+        if bounded and args.replay_manifest is None:
+            from dean_integration.selex_replay_manifest import write_manifest
+            from dean_integration.selex_hierarchy_provider import digest
+            args.replay_manifest = run/"replay_eligibility.json"
+            write_manifest(args.replay_manifest, replay_record)
+            args.replay_manifest_sha256 = digest(replay_record)
         jobs = [(seed, run / f"seed{seed}", worker_command(args, checkout, run / f"seed{seed}", seed)) for seed in seeds]
         return execute_run(run, report, jobs,
                            lambda command, **kw: subprocess.run(command, stderr=subprocess.STDOUT, **kw))

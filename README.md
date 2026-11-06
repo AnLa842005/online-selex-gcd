@@ -1,3 +1,8 @@
+> DEAN research update: [Online HSSK + USE/SSE Phase 3](docs/DEAN_SELEX_HSSK_PHASE3.md)
+> is smoke-ready; full training remains blocked for Phase 4. No GPU smoke has run.
+> `dean_prototypes` is the explicit SelEx-inspired prototype hierarchy ablation.
+> Historical stage notes and original attribution follow.
+
 > DEAN is now the strong baseline/main integration path. Phase DEAN-0 is
 > preparation only, **NOT RUN**: [upstream/protocol audit](docs/DEAN_UPSTREAM_AUDIT.md),
 > [official CUB runbook](docs/DEAN_REPRODUCTION_RUNBOOK.md), and

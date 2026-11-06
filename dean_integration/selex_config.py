@@ -39,6 +39,8 @@ class ReferenceConfig:
     def __post_init__(self):
         if self.hierarchy_source not in ("hssk_online", "dean_prototypes"):
             raise ValueError("Unknown hierarchy_source")
+        if self.hierarchy_source == "hssk_online" and (type(self.output_dim) is not int or self.output_dim < 2):
+            raise ValueError("HSSK needs positive-width hierarchy prefixes (output_dim >= 2)")
         if self.insufficient_support_policy not in ("reuse_then_skip", "reuse_then_error"):
             raise ValueError("Unknown insufficient_support_policy")
         for name, expected in (("replay_capacity", 320), ("replay_per_class", 2), ("replay_selection_size", 32)):

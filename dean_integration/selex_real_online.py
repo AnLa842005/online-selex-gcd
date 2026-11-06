@@ -9,7 +9,7 @@ import torch
 from .provenance import write_json
 from .selex_config import SOURCE_SHA
 from .selex_hierarchy import integer_ids
-from .selex_hierarchy_provider import create_provider, ensure_provider_ready, provider_metadata
+from .selex_hierarchy_provider import create_provider, ensure_provider_ready, provider_metadata, digest
 from .selex_projector import SelExProjector
 from .selex_reference import expertise_losses
 from .selex_rng import SelExRNG
@@ -89,13 +89,23 @@ def assert_optimizer_order(optimizer, projector, classifier):
 
 
 class RealSelExOnline:
-    def __init__(self, config, seed, output=None, base_classes=160):
+    def __init__(self, config, seed, output=None, base_classes=160, *, bounded_smoke=False, context=None, replay_manager=None):
         if config.gamma <= 0:
             raise ValueError("Gamma-zero must bypass real SelEx construction entirely")
-        ensure_provider_ready(config)  # Before projector/RNG/image work, never fallback.
+        ensure_provider_ready(config, bounded_smoke)  # Never opens full training in Phase 3.
+        self.is_hssk = config.hierarchy_source == "hssk_online"
         self.provider = create_provider(config, base_classes)
         self.config, self.rng = config, SelExRNG(seed)
-        self.hierarchy = self.provider.ema  # Exact legacy alias for the ablation.
+        self.hierarchy = self.provider.memory if self.is_hssk else self.provider.ema
+        if self.is_hssk:
+            if not isinstance(context, dict):
+                raise ValueError("HSSK smoke requires explicit lineage/dataset context")
+            self.hssk_context = context
+            self.hssk_seed = int(digest(dict(seed=seed, domain="hssk-fit"))[:15], 16)
+            self.eval_rng = SelExRNG(int(digest(dict(seed=seed, domain="hierarchy-eval"))[:8], 16))
+            self.replay_rng = SelExRNG(int(digest(dict(seed=seed, domain="replay-views"))[:8], 16))
+            self.projector_rng = SelExRNG(int(digest(dict(seed=seed, domain="projector"))[:8], 16))
+            self.replay_manager, self.replay_image_factory = replay_manager, None
         self.projector = None
         self.counters = Counter()
         self.batch, self.step = -1, 0
@@ -103,11 +113,28 @@ class RealSelExOnline:
         self.telemetry = None
         self.optimizer_groups = []
 
+    def configure_replay_from_cub(self, labelled_dataset, make_transform):
+        if not self.is_hssk or self.replay_manager is None:
+            return
+        manager = self.replay_manager
+        if set(labelled_dataset.uq_idxs.tolist()) != set(manager.eligibility._records):
+            raise ValueError("Actual original train_labelled IDs differ from reconstructed eligibility")
+        root = Path(labelled_dataset.root)/labelled_dataset.base_folder
+        loader = labelled_dataset.loader
+        with self.eval_rng.scope():
+            train, evaluation = make_transform(is_train=True), make_transform(is_train=False)
+        def factory(ids):
+            entries = {e.sample_id: e for e in manager.entries}
+            return CurrentBatchImages(ids, lambda key: loader(str(root/entries[key].canonical_path)), train, evaluation)
+        self.replay_image_factory = factory
+
     def start_session(self, model):
         if self.projector is not None:
             raise ValueError("Real v1 expects the official single incremental session")
         self.device = next(model.parameters()).device
-        with self.rng.scope(self.device):
+        if self.is_hssk:
+            self.smoke_model = model
+        with (self.projector_rng if self.is_hssk else self.rng).scope(self.device):
             self.projector = SelExProjector(self.config).to(self.device)
         if self.output:
             self.telemetry = self.output / "selex_reference_metrics.jsonl"
@@ -118,6 +145,10 @@ class RealSelExOnline:
                     projector_frozen=sum(p.numel() for p in self.projector.parameters() if not p.requires_grad))
 
     def prepare_batch(self, model, dataset, make_transform, num_classes):
+        if self.is_hssk:
+            with self.eval_rng.scope(self.device):
+                images = CurrentBatchImages.from_cub(dataset, make_transform)
+            return self.prepare(model, images, None, num_classes)
         with self.rng.scope(self.device):
             images = CurrentBatchImages.from_cub(dataset, make_transform)
         labels = integer_ids(dataset.ys, "DEAN pseudo labels")
@@ -127,6 +158,9 @@ class RealSelExOnline:
     def prepare(self, model, images, labels, num_classes):
         if self.projector is None:
             raise ValueError("Real SelEx session not initialized")
+        if self.is_hssk:
+            from .selex_hssk_runtime import prepare
+            return prepare(self, model, images)
         labels = integer_ids(labels, "DEAN pseudo labels").cpu()
         if len(labels) != len(images.sample_ids) or type(num_classes) is not int or num_classes < 1:
             raise ValueError("DEAN labels/class inventory/current IDs must align")
@@ -170,6 +204,9 @@ class RealSelExOnline:
                     trainable_parameters=sum(g["trainable"] for g in self.optimizer_groups))
 
     def augment(self, official_loss, ce, weighted_ec, model, pseudo_labels, sample_ids, replay=None):
+        if self.is_hssk:
+            from .selex_hssk_runtime import augment
+            return augment(self, official_loss, ce, weighted_ec, model, sample_ids, replay)
         if self.batch < 0:
             raise ValueError("Auxiliary update before current batch hierarchy preparation")
         ids = integer_ids(sample_ids, "optimization sample IDs").cpu()
@@ -233,7 +270,15 @@ class RealSelExOnline:
                        dict(implementation="reference_v1", source_sha=SOURCE_SHA, config=asdict(self.config),
                             **provider_metadata(self.config),
                             rng_seed=self.rng.seed, batch=self.batch, step=self.step,
-                            counters=dict(self.counters), hierarchy_counters=dict(self.hierarchy.counters),
-                            prototype_counts=dict(self.hierarchy.counts),
+                            counters=dict(self.counters), hierarchy_counters=dict(self.provider.counters if self.is_hssk else self.hierarchy.counters),
+                            prototype_counts=({k: t.support_count for k, t in self.provider.memory.tracks.items()} if self.is_hssk else dict(self.hierarchy.counts)),
+                            **(dict(last_event=event, full_train_blocked=True, hierarchy_state=dict(
+                                status=self.build_result.status.value, reason=self.build_result.reason,
+                                snapshot_hash=self.snapshot.snapshot_hash if self.snapshot else None,
+                                memory_hash=self.provider.memory.state_hash,
+                                diagnostics=self.snapshot.diagnostics if self.snapshot else {},
+                                replay=self.replay_manager.last_counts if self.replay_manager else {}))
+                               if self.is_hssk and hasattr(self, "build_result") else {}),
+                            **(dict(smoke_diagnostics=self.smoke_budget.summary()) if hasattr(self, "smoke_budget") else {}),
                             optimizer_groups=self.optimizer_groups,
                             projector_trainable=sum(p.numel() for p in self.projector.parameters() if p.requires_grad)))

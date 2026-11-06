@@ -91,3 +91,23 @@ def instrument_boundary(tree, *, online_only=False, paired_online=False):
                 value[index + 1:index + 1] = ast.parse(hook).body
                 return tree
     raise ValueError("Missing base boundary block")
+
+
+def patch_bounded_smoke(tree):
+    """Pinned smoke-only changes: suppress full base eval, terminate post-step."""
+    session = exactly(tree, lambda n: isinstance(n, ast.Assign) and source(n) == "model_now = model_now.cuda()", "smoke student")
+    insert_after(tree, session, "_dean_real.configure_replay_from_cub(dt_train_labelled, dataset.utils.make_transform)")
+    loop = exactly(tree, lambda n: isinstance(n, ast.For) and source(n.iter) == "range(0, args.inc_epochs)", "smoke inner epochs")
+    step = exactly(loop, lambda n: isinstance(n, ast.Expr) and source(n) == "opt.step()", "smoke optimizer step")
+    insert_after(tree, step, "_dean_smoke.step_completed()")
+    forward = exactly(loop, lambda n: isinstance(n, ast.Assign) and source(n) == "feats = model_now(on_x)", "smoke forward")
+    index = loop.body.index(forward)
+    loop.body[index:index] = ast.parse("_dean_smoke.update_started()").body
+    main = exactly(tree, lambda n: isinstance(n, ast.If) and source(n.test) == "__name__ == '__main__'", "main block")
+    marker = next((i for i, n in enumerate(main.body) if isinstance(n, ast.Expr) and source(n) == "print('==> Init. Evaluation..')"), None)
+    if marker is None or not isinstance(main.body[marker+1], ast.With):
+        raise ValueError("Audited smoke initial evaluation boundary changed")
+    main.body[marker+1:marker+2] = ast.parse("acc_0 = None").body
+    message = exactly(tree, lambda n: isinstance(n, ast.Expr) and "[Base Session] After Pretrain" in source(n), "base accuracy print")
+    message.value = ast.parse("print('Bounded smoke: base accuracy not measured')", mode="eval").body
+    return tree

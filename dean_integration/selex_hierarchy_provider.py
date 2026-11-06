@@ -142,7 +142,9 @@ class HierarchySnapshot:
                      source_batch=source_batch, frozen=True,
                      assignments=[asdict(a) for a in sorted(assignments, key=lambda a: a.sample_id)],
                      centers=encoded_centers, radii=encoded_radii, diagnostics=diagnostics or {})
-        payload = canonical(value)
+        # JSON object keys become strings. Normalize before hashing so nested
+        # integer-keyed child/parent diagnostics round-trip canonically too.
+        payload = canonical(json.loads(canonical(value)))
         object.__setattr__(self, "_payload", payload)
         object.__setattr__(self, "snapshot_hash", hashlib.sha256(payload.encode()).hexdigest())
 
@@ -326,36 +328,49 @@ def validate_state(state, kind):
 
 class OnlineHSSKHierarchyProvider(HierarchyProvider):
     kind = HierarchyProviderKind.HSSK_ONLINE
-    implementation_status = "scaffold/incomplete"
+    implementation_status = "smoke_ready, full_train_blocked"
+
+    def __init__(self, config=None):
+        from .selex_hssk_provider import HSSKProviderImplementation
+        self.implementation = HSSKProviderImplementation(config)
+
+    @property
+    def memory(self):
+        return self.implementation.memory
+
+    @property
+    def counters(self):
+        return self.implementation.counters
 
     def build(self, support, dean_leaf_ids=None, labeled_replay=None, prototype_memory=None, context=None):
-        # Deliberately do not inspect inputs, especially DEAN predictions/state.
-        raise HSSKImplementationIncomplete("HSSK implementation incomplete")
+        if prototype_memory is not None:
+            raise ValueError("HSSK owns its memory; external/DEAN EMA is forbidden")
+        return self.implementation.build(support, labeled_replay, context)
 
     def state_dict(self):
-        p = dict(schema=SCHEMA, provider=self.kind.value, implementation_status=self.implementation_status,
-                 hssk_memory={})
-        return dict(payload=p, state_hash=digest(p))
+        return self.implementation.state_dict()
 
     def load_state_dict(self, state):
-        validate_state(state, self.kind)
-        if state != self.state_dict():
-            raise ValueError("Phase 1 scaffold cannot restore implemented/nonempty HSSK state")
+        self.implementation.load_state_dict(state)
 
 
 def provider_metadata(config):
     kind = HierarchyProviderKind(config.hierarchy_source)
-    return dict(hierarchy_source=kind.value, hierarchy_provider_status=("scaffold/incomplete" if kind ==
+    return dict(hierarchy_source=kind.value, hierarchy_provider_status=("smoke_ready, full_train_blocked" if kind ==
                 HierarchyProviderKind.HSSK_ONLINE else "ablation"))
 
 
-def ensure_provider_ready(config):
-    if config.hierarchy_source == HierarchyProviderKind.HSSK_ONLINE.value:
-        raise HSSKImplementationIncomplete("HSSK implementation incomplete")
+class FullTrainingBlocked(ValueError):
+    pass
+
+
+def ensure_provider_ready(config, bounded_smoke=False):
+    if config.hierarchy_source == HierarchyProviderKind.HSSK_ONLINE.value and not bounded_smoke:
+        raise FullTrainingBlocked("Full training blocked: Phase 4 resume/provenance readiness required")
 
 
 def create_provider(config, base_classes=160):
     kind = HierarchyProviderKind(config.hierarchy_source)
     if kind == HierarchyProviderKind.HSSK_ONLINE:
-        return OnlineHSSKHierarchyProvider()
+        return OnlineHSSKHierarchyProvider(config)
     return DeanPrototypeHierarchyProvider(config, base_classes)

@@ -22,7 +22,7 @@ from dean_integration.selex_hierarchy import EMAHierarchy
 from dean_integration.selex_hierarchy_provider import (
     DeanPrototypeHierarchyProvider, HierarchyBuildResult, HierarchyBuildStatus,
     HierarchyProviderKind, HierarchySnapshot, HierarchySupportPool,
-    HSSKImplementationIncomplete, OnlineHSSKHierarchyProvider,
+    FullTrainingBlocked, OnlineHSSKHierarchyProvider,
     SampleHierarchyAssignment, create_provider, digest, provider_metadata)
 from dean_integration.selex_reference import expertise_losses
 
@@ -172,9 +172,10 @@ class ProviderTests(unittest.TestCase):
         with patch("dean_integration.selex_hierarchy_provider.DeanPrototypeHierarchyProvider", side_effect=AssertionError("fallback")):
             provider = create_provider(cfg)
             self.assertIsInstance(provider, OnlineHSSKHierarchyProvider)
-            with self.assertRaisesRegex(HSSKImplementationIncomplete, "HSSK implementation incomplete"):
-                provider.build(Poison(), Poison(), Poison(), Poison(), Poison())
-        self.assertEqual(provider_metadata(cfg)["hierarchy_provider_status"], "scaffold/incomplete")
+            pool = HierarchySupportPool([8, 90], torch.ones(2, 768))
+            result = provider.build(pool, Poison(), context=dict(batch=0, seed=1, model_lineage="m", dataset="d", feature_version="v", seed_protocol="s"))
+            self.assertEqual(result.status, HierarchyBuildStatus.BUILD)
+        self.assertEqual(provider_metadata(cfg)["hierarchy_provider_status"], "smoke_ready, full_train_blocked")
 
     def test_state_isolation_and_corruption(self):
         hssk = OnlineHSSKHierarchyProvider()
@@ -211,7 +212,7 @@ class ProviderTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_reference_config(path)
 
-    def test_hssk_cli_blocks_before_training_and_emits_incomplete_provenance(self):
+    def test_hssk_cli_blocks_full_training_and_reports_smoke_ready(self):
         spec = importlib.util.spec_from_file_location("hssk_phase1_cli", ROOT/"scripts/run_dean.py")
         cli = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cli)
@@ -227,15 +228,15 @@ class ProviderTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, 1)
             report = json.loads(output.getvalue())
             self.assertEqual(report["hierarchy_source"], "hssk_online")
-            self.assertEqual(report["hierarchy_provider_status"], "scaffold/incomplete")
+            self.assertEqual(report["hierarchy_provider_status"], "smoke_ready, full_train_blocked")
             self.assertEqual(report["status"], "BLOCKED")
 
-    def test_incomplete_controller_fails_before_rng_or_projector(self):
+    def test_full_training_controller_fails_before_rng_or_projector(self):
         from dean_integration.selex_real_online import RealSelExOnline
         cfg = small(hierarchy_source="hssk_online")
         with patch("dean_integration.selex_real_online.SelExRNG", side_effect=AssertionError("RNG")), \
              patch("dean_integration.selex_real_online.create_provider", side_effect=AssertionError("provider")):
-            with self.assertRaises(HSSKImplementationIncomplete):
+            with self.assertRaises(FullTrainingBlocked):
                 RealSelExOnline(cfg, 1)
 
     def test_disabled_and_gamma_zero_hssk_bypass_provider_images_rng_and_loss_hooks(self):
