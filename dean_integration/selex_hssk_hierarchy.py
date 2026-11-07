@@ -68,7 +68,7 @@ def coarsen_children(*, centers, support_counts, anchor_groups, seed, level):
     free = len(keys)-len(anchored)
     target_a, target_f = math.ceil(len(anchored)/2), math.ceil(free/2)
     k = target_a+target_f
-    if k >= len(keys) or (target_f and free < 2*target_f):
+    if k >= len(keys) or (anchored and target_a >= len(anchored)) or (target_f and free < 2*target_f):
         return None
     private = int(digest(dict(domain="hssk-higher-v1", seed=seed, level=level))[:16], 16) % 2**63
     fixed = torch.full((len(keys),), -1, dtype=torch.long)
@@ -90,3 +90,16 @@ def coarsen_children(*, centers, support_counts, anchor_groups, seed, level):
         groups[j] = tuple(sorted({gt for i in torch.where(mask)[0].tolist() for gt in anchor_groups[keys[i]]}))
     return dict(mapping={key: int(labels[i]) for i, key in enumerate(keys)}, centers=dict(enumerate(parents)),
                 counts=counts, radii=radii, anchor_groups=groups)
+
+
+def coarsening_stop_info(anchor_groups):
+    """Explain the locked support gate without changing fitting or its inputs."""
+    a = sum(bool(v) for v in anchor_groups.values())
+    f = len(anchor_groups)-a
+    requested = math.ceil(f/2)
+    reason = ("insufficient_free_child_support" if requested and f < 2*requested else
+              "anchored_side_no_strict_reduction" if a and math.ceil(a/2) >= a else
+              "no_strict_reduction" if math.ceil(a/2)+requested >= len(anchor_groups) else
+              "weighted_fit_rejected")
+    return dict(reason=reason, child_count=f, requested_parent_count=requested,
+                minimum_children_per_parent=2, required_child_count=2*requested)

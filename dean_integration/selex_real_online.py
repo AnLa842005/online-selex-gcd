@@ -89,10 +89,12 @@ def assert_optimizer_order(optimizer, projector, classifier):
 
 
 class RealSelExOnline:
-    def __init__(self, config, seed, output=None, base_classes=160, *, bounded_smoke=False, context=None, replay_manager=None):
+    def __init__(self, config, seed, output=None, base_classes=160, *, bounded_smoke=False, context=None, replay_manager=None, lifecycle_mode=False):
         if config.gamma <= 0:
             raise ValueError("Gamma-zero must bypass real SelEx construction entirely")
-        ensure_provider_ready(config, bounded_smoke)  # Never opens full training in Phase 3.
+        ensure_provider_ready(config, bounded_smoke or lifecycle_mode)  # Default API stays gated; lifecycle is explicitly selected.
+        self.lifecycle_mode = lifecycle_mode
+        self.phase, self.completed_updates, self.event_sequence = "READY", 0, 0
         self.is_hssk = config.hierarchy_source == "hssk_online"
         self.provider = create_provider(config, base_classes)
         self.config, self.rng = config, SelExRNG(seed)
@@ -264,15 +266,21 @@ class RealSelExOnline:
 
     def _event(self, event, **values):
         if self.telemetry:
+            if self.is_hssk:
+                values = dict(values, event_id=self.event_sequence)
+                self.event_sequence += 1
             with self.telemetry.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(dict(event=event, **values), allow_nan=False) + "\n")
+            metadata = provider_metadata(self.config)
+            if self.lifecycle_mode:
+                metadata["hierarchy_provider_status"] = "production_boundary_resume_ready"
             write_json(self.output / "selex_reference_summary.json",
                        dict(implementation="reference_v1", source_sha=SOURCE_SHA, config=asdict(self.config),
-                            **provider_metadata(self.config),
+                            **metadata,
                             rng_seed=self.rng.seed, batch=self.batch, step=self.step,
                             counters=dict(self.counters), hierarchy_counters=dict(self.provider.counters if self.is_hssk else self.hierarchy.counters),
                             prototype_counts=({k: t.support_count for k, t in self.provider.memory.tracks.items()} if self.is_hssk else dict(self.hierarchy.counts)),
-                            **(dict(last_event=event, full_train_blocked=True, hierarchy_state=dict(
+                            **(dict(last_event=event, last_record=dict(event=event, **values), full_train_blocked=not self.lifecycle_mode, hierarchy_state=dict(
                                 status=self.build_result.status.value, reason=self.build_result.reason,
                                 snapshot_hash=self.snapshot.snapshot_hash if self.snapshot else None,
                                 memory_hash=self.provider.memory.state_hash,
@@ -280,5 +288,19 @@ class RealSelExOnline:
                                 replay=self.replay_manager.last_counts if self.replay_manager else {}))
                                if self.is_hssk and hasattr(self, "build_result") else {}),
                             **(dict(smoke_diagnostics=self.smoke_budget.summary()) if hasattr(self, "smoke_budget") else {}),
+                            **(dict(hierarchy_aggregate=hierarchy_aggregate(self.provider.counters),
+                                    lifecycle_phase=self.phase, completed_optimizer_updates=self.completed_updates) if self.is_hssk else {}),
                             optimizer_groups=self.optimizer_groups,
                             projector_trainable=sum(p.numel() for p in self.projector.parameters() if p.requires_grad)))
+
+
+def hierarchy_aggregate(counters):
+    leaf = counters.get("hssk.build.leaf_only", 0)
+    multi = counters.get("hssk.build.multi_level", 0)
+    return dict(build_leaf_only=leaf, build_multi_level=multi,
+                levels_histogram={k.rsplit(".",1)[1]:v for k,v in counters.items() if k.startswith("hssk.levels.")},
+                coarsening_stop_reasons={k[len("hssk.higher.stop."):]:v for k,v in counters.items() if k.startswith("hssk.higher.stop.")},
+                higher_build_fraction=multi/(leaf+multi) if leaf+multi else 0.0,
+                higher_batch_fraction=counters.get("hssk.used_higher",0)/max(1,counters.get("hssk.batch_decisions",0)),
+                batch_levels_histogram={k.rsplit(".",1)[1]:v for k,v in counters.items() if k.startswith("hssk.batch_levels.")},
+                interpretation="Report observed hierarchy coverage; leaf-only-dominated runs are a research finding, not evidence of full hierarchical benefit")

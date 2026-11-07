@@ -48,7 +48,20 @@ def execute_run(run, report, jobs, runner):
                                 raise ValueError("Real SelEx telemetry config differs from provenance")
                             if code == 0 and (summary.get("step", 0) < 1 or not summary.get("optimizer_groups")):
                                 raise ValueError("Real SelEx worker completed without optimizer updates")
-                            if code == 0 and report.get("hierarchy_source") == "hssk_online":
+                            if code == 0 and report.get("hssk_lifecycle"):
+                                record = summary.get("last_record", {})
+                                checkpoint = record.get("checkpoint", {})
+                                if (summary.get("last_event") != "complete" or record.get("exit_code") != 0
+                                        or summary.get("lifecycle_phase") != "BOUNDARY"
+                                        or summary.get("completed_optimizer_updates") != record.get("completed_batches",0)*15
+                                        or summary.get("hierarchy_counters",{}).get("hssk.batch_decisions") != record.get("completed_batches")
+                                        or not checkpoint.get("state_hash") or not checkpoint.get("path")
+                                        or sha256(checkpoint["path"]) != checkpoint.get("sha256")
+                                        or (report.get("lifecycle_smoke") and record.get("incoming_batches_started") != 2)):
+                                    raise ValueError("HSSK lifecycle missing verified completion/state")
+                                status["final_state"] = checkpoint
+                                status["hierarchy_aggregate"] = summary.get("hierarchy_aggregate",{})
+                            if code == 0 and report.get("hierarchy_source") == "hssk_online" and not report.get("hssk_lifecycle"):
                                 expected_updates = report.get("bounded_smoke", {}).get("optimizer_updates")
                                 hierarchy = summary.get("hierarchy_state", {})
                                 budget = summary.get("smoke_diagnostics", {})

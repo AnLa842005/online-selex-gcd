@@ -124,3 +124,27 @@ def patch_bounded_smoke(tree):
     message = exactly(tree, lambda n: isinstance(n, ast.Expr) and "[Base Session] After Pretrain" in source(n), "base accuracy print")
     message.value = ast.parse("print('Bounded smoke: base accuracy not measured')", mode="eval").body
     return tree
+
+
+def patch_lifecycle(tree):
+    """Separate production/bounded-lifecycle path; leaves one-batch smoke intact."""
+    incoming = exactly(tree, lambda n: isinstance(n, ast.For)
+                       and source(n.target) == "(batch_idx, (on_x, on_y, on_z))"
+                       and source(n.iter) == "pbar", "lifecycle incoming batch")
+    session = exactly(tree, lambda n: isinstance(n, ast.Assign) and source(n) == "model_now = model_now.cuda()", "lifecycle student")
+    insert_after(tree, session, "_dean_real.configure_replay_from_cub(dt_train_labelled, dataset.utils.make_transform)")
+    pbar = exactly(tree, lambda n: isinstance(n, ast.Assign) and source(n) == "pbar = enumerate(dlod_tr_now)", "lifecycle stream boundary")
+    # Restore models/optimizer/RNG after session setup, before next stream item.
+    pbar.value = ast.parse("_dean_lifecycle.stream(copy.deepcopy(inc_tr_dataset), sess_idx, args.inc_sz_batch, args.nb_workers)", mode="eval").body
+    for parent in ast.walk(tree):
+        if hasattr(parent,"body") and isinstance(parent.body,list) and pbar in parent.body:
+            parent.body.insert(parent.body.index(pbar),ast.parse("_dean_lifecycle.session_ready(globals())").body[0])
+            break
+    incoming.body[:0] = ast.parse("_dean_lifecycle.batch_started(sess_idx, batch_idx)").body
+    loop = exactly(incoming, lambda n: isinstance(n,ast.For) and source(n.iter)=="range(0, args.inc_epochs)", "lifecycle epochs")
+    step = exactly(loop,lambda n:isinstance(n,ast.Expr) and source(n)=="opt.step()", "lifecycle optimizer step")
+    forward=exactly(loop,lambda n:isinstance(n,ast.Assign) and source(n)=="feats = model_now(on_x)","lifecycle forward")
+    loop.body.insert(loop.body.index(forward),ast.parse("_dean_lifecycle.update_started()").body[0])
+    insert_after(tree,step,"_dean_lifecycle.step_completed()")
+    incoming.body.extend(ast.parse("_dean_lifecycle.batch_completed(globals())").body)
+    return tree

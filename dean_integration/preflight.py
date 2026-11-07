@@ -1,5 +1,6 @@
 """Read-only asset/runtime checks except an explicit output write probe."""
 import hashlib
+import json
 import importlib.metadata
 from pathlib import Path
 import platform
@@ -91,9 +92,48 @@ def check_assets(dataset_parent, checkpoint, output, upstream=None):
         errors.append(f"CUB metadata: {exc}")
     try:
         Path(output).mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryFile(dir=output) as handle:
-            handle.write(b"DEAN output probe")
+        probe_output(output)
     except OSError as exc:
         errors.append(f"Output is not writable: {exc}")
     report["errors"] = errors
     return report
+
+
+def probe_output(output):
+    """Named, exclusive readback probe; works without Linux O_TMPFILE on FUSE."""
+    import os
+    import errno
+    path = None
+    try:
+        fd, name = tempfile.mkstemp(prefix=".dean-probe-", dir=output)
+        path = Path(name)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(b"DEAN output probe")
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError as exc:
+                if exc.errno not in (errno.EINVAL, errno.ENOTSUP, errno.ENOSYS):
+                    raise
+        if path.read_bytes() != b"DEAN output probe":
+            raise OSError("Output probe readback mismatch")
+    finally:
+        if path is not None:
+            path.unlink()
+
+
+def dataset_content_hash(root):
+    """Hash actual CUB image bytes in canonical metadata order on local SSD."""
+    import hashlib
+    root = Path(root).resolve()
+    image_root = (root / "images").resolve()
+    records = []
+    for line in (root / "images.txt").read_text(encoding="utf-8").splitlines():
+        key, relative = line.split(maxsplit=1)
+        path = (image_root / relative).resolve()
+        if not path.is_relative_to(image_root) or not path.is_file():
+            raise ValueError("Invalid/missing CUB image path")
+        records.append((int(key), relative, sha256(path)))
+    if len({r[0] for r in records}) != len(records):
+        raise ValueError("Duplicate CUB content identity")
+    return hashlib.sha256(json.dumps(sorted(records), separators=(",", ":")).encode()).hexdigest()

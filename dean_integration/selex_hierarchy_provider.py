@@ -90,6 +90,7 @@ class HierarchySnapshot:
     are SAMPLE IDs. The legacy EMA snapshot class remains untouched.
     """
     _payload: str
+    _radii_payload: str
     snapshot_hash: str
 
     def __init__(self, provider, assignments, centers=(), radii=(), source_batch=0,
@@ -146,6 +147,8 @@ class HierarchySnapshot:
         # integer-keyed child/parent diagnostics round-trip canonically too.
         payload = canonical(json.loads(canonical(value)))
         object.__setattr__(self, "_payload", payload)
+        # Hot loss lookups need only tiny scalar radii, not the full 768-D geometry.
+        object.__setattr__(self, "_radii_payload", canonical(encoded_radii))
         object.__setattr__(self, "snapshot_hash", hashlib.sha256(payload.encode()).hexdigest())
 
     def _value(self):
@@ -200,7 +203,7 @@ class HierarchySnapshot:
 
     @property
     def radii(self):
-        return tuple({int(k): v for k, v in row.items()} for row in self._value()["radii"])
+        return tuple({int(k): v for k, v in row.items()} for row in json.loads(self._radii_payload))
 
     def assignments(self, sample_ids, device=None):
         ids = integer_ids(sample_ids, "lookup sample IDs").cpu().tolist()

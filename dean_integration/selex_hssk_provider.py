@@ -1,4 +1,4 @@
-"""Complete detached HSSK snapshots; execution is still smoke-only in Phase 3."""
+"""Detached HSSK snapshots with locked coarsening and transactional publication."""
 from collections import Counter
 from dataclasses import asdict
 import torch
@@ -8,7 +8,7 @@ from .selex_hierarchy_provider import (HierarchyBuildResult, HierarchyBuildStatu
     HierarchySnapshot, HierarchySupportPool, SampleHierarchyAssignment, SCHEMA, digest, validate_state)
 from .selex_hssk_online import (HSSKLeafFitter, HSSKPrototypeMemory, LeafFitStatus, squared_distances,
                                VerifiedReplayFeatures)
-from .selex_hssk_hierarchy import coarsen_children
+from .selex_hssk_hierarchy import coarsen_children, coarsening_stop_info
 
 
 class HSSKProviderImplementation:
@@ -33,6 +33,16 @@ class HSSKProviderImplementation:
 
     @torch.no_grad()
     def build(self, support, replay, context):
+        before = self.state_dict()
+        try:
+            return self._build(support, replay, context)
+        except Exception:
+            self.load_state_dict(before)
+            self.counters["hssk.error"] += 1
+            raise
+
+    @torch.no_grad()
+    def _build(self, support, replay, context):
         if not isinstance(support, HierarchySupportPool) or not isinstance(context, dict):
             raise ValueError("HSSK requires a typed support pool and context")
         identity = self._identity(context)
@@ -63,11 +73,13 @@ class HSSKProviderImplementation:
         counts = {int(k): v["support_count"] for k, v in value["leaves"].items()}
         anchors = {int(k): (v["anchor_gt"],) if v["anchored"] else () for k, v in value["leaves"].items()}
         groups, child_maps, support_counts = [anchors], [], [counts]
+        stop = dict(reason="projection_prefix_limit")
         # A level l consumes prefix D//2**(l+1); never build a zero-width level.
         while self.config.output_dim // 2**(len(mappings)+1) > 0:
             higher = coarsen_children(centers=centers[-1], support_counts=counts,
                                      anchor_groups=anchors, seed=seed, level=len(mappings))
             if higher is None:
+                stop = coarsening_stop_info(anchors)
                 break
             local = sorted(higher["centers"])
             allocated = {k: plan._next_id-i for i, k in enumerate(local)}
@@ -81,7 +93,8 @@ class HSSKProviderImplementation:
             anchors = {allocated[k]: v for k, v in higher["anchor_groups"].items()}
             groups.append(anchors)
             support_counts.append(counts)
-        diagnostics = dict(status="BUILD", k=value["selected_k"], a=value["a"], k_free=value["k_free"],
+        stop["status"] = "LEAF_ONLY" if len(mappings) == 1 else "MULTI_LEVEL"
+        diagnostics = dict(status="BUILD", higher_stop=stop, hierarchy_type=stop["status"], k=value["selected_k"], a=value["a"], k_free=value["k_free"],
             leaf_fit_hash=leaf.fit_hash, leaf_score=value["score"], levels=len(mappings),
             memory_hash_before=before, memory_hash_after=plan.state_hash,
             child_maps=child_maps, anchor_groups=groups, support_counts=support_counts,
@@ -91,6 +104,11 @@ class HSSKProviderImplementation:
         self.previous, self.identity = snapshot, identity
         self.last_batch, self.last_status = batch, "BUILD"
         self.counters["hssk.build"] += 1
+        self.counters["hssk.build."+stop["status"].lower()] += 1
+        self.counters["hssk.levels."+str(len(mappings))] += 1
+        self.counters["hssk.used_higher"] += int(len(mappings) > 1)
+        self.counters["hssk.batch_levels."+str(len(mappings))] += 1
+        self.counters["hssk.higher.stop."+stop["reason"]] += 1
         self.counters.update(value["counters"])
         return HierarchyBuildResult(self.kind, HierarchyBuildStatus.BUILD, snapshot)
 
@@ -146,6 +164,8 @@ class HSSKProviderImplementation:
                         reuse_hash=digest(dict(previous=old.snapshot_hash, batch=batch, assignment=mapping)))
                     snapshot = self._snapshot(ids.tolist(), mappings, old.centers, old.radii, old.source_batch, diag)
                     self.counters["hssk.reuse"] += 1
+                    self.counters["hssk.used_higher"] += int(len(mappings) > 1)
+                    self.counters["hssk.batch_levels."+str(len(mappings))] += 1
                     return HierarchyBuildResult(self.kind, HierarchyBuildStatus.REUSE, snapshot)
         self.counters["hssk.reuse_rejected."+str(reason)] += 1
         self.counters["hssk.insufficient_support."+failed_reason] += 1

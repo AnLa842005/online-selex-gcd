@@ -32,7 +32,7 @@ def verify_checkout(checkout):
     return checkout
 
 
-def bound_entrypoint(checkout, dataset_parent, *, online_only=False, use_selex_online=False, capture_boundary=False, paired_online=False, reference_selex=False, bounded_smoke=False):
+def bound_entrypoint(checkout, dataset_parent, *, online_only=False, use_selex_online=False, capture_boundary=False, paired_online=False, reference_selex=False, bounded_smoke=False, lifecycle=False):
     path = Path(checkout) / "Ours_train_online.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     literals = [node for node in ast.walk(tree)
@@ -48,6 +48,11 @@ def bound_entrypoint(checkout, dataset_parent, *, online_only=False, use_selex_o
     if online_only or paired_online or capture_boundary:
         from .runtime import instrument_boundary
         tree = instrument_boundary(tree, online_only=online_only, paired_online=paired_online)
+    if lifecycle:
+        if bounded_smoke or not paired_online or not reference_selex:
+            raise ValueError("Lifecycle requires separate active paired HSSK path")
+        from .runtime import patch_lifecycle
+        tree = patch_lifecycle(tree)
     if bounded_smoke:
         if not paired_online or not reference_selex:
             raise ValueError("Bounded HSSK smoke requires paired online and active reference losses")

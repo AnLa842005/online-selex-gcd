@@ -1,4 +1,5 @@
-"""Smoke-only live-view bridge; verified replay and hierarchy never see stream GT."""
+"""Frozen live-view bridge; verified replay and hierarchy never see stream GT."""
+from copy import deepcopy
 import torch
 from .selex_hierarchy import integer_ids
 from .selex_hierarchy_provider import HierarchySupportPool, HierarchyBuildStatus
@@ -8,8 +9,28 @@ from .selex_reference import expertise_losses
 
 @torch.no_grad()
 def prepare(engine, model, images):
-    if engine.batch >= 0:
+    if not engine.lifecycle_mode:
+        return _prepare(engine, model, images)
+    replay = engine.replay_manager.state_dict() if engine.replay_manager else None
+    provider = engine.provider.state_dict()
+    domains = {name: deepcopy(vars(getattr(engine,name))) for name in ("eval_rng",)}
+    try:
+        return _prepare(engine, model, images)
+    except Exception as exc:
+        engine.provider.load_state_dict(provider)
+        engine.provider.counters["hssk.error"] += 1
+        if replay is not None: engine.replay_manager.load_state_dict(replay)
+        for name,state in domains.items(): getattr(engine,name).__dict__.update(state)
+        engine._event("error", reason=str(exc), error_type=type(exc).__name__)
+        raise
+
+
+@torch.no_grad()
+def _prepare(engine, model, images):
+    if engine.batch >= 0 and not engine.lifecycle_mode:
         raise ValueError("Bounded smoke permits one incoming batch only")
+    if engine.lifecycle_mode and engine.phase not in ("READY", "BOUNDARY"):
+        raise ValueError("Previous batch freeze window is not complete")
     if hasattr(engine, "smoke_budget"):
         engine.smoke_budget.hierarchy_started()
     batch = engine.batch+1
@@ -36,11 +57,13 @@ def prepare(engine, model, images):
     engine.snapshot = result.snapshot
     engine.images, engine.selected_replay_images = images, selected_images
     engine.batch, engine.step = batch, 0
+    engine.phase = "FROZEN"
+    engine.frozen_hash = engine.snapshot.snapshot_hash if engine.snapshot else None
     if hasattr(engine, "smoke_budget"):
         engine.smoke_budget.hierarchy_completed()
     if selected_images is None:
         engine.counters["sse.gt.unavailable.no_verified_selection"] += 1
-    engine._event("batch", batch=batch, provider_status=result.status.value, reason=result.reason,
+    engine._event("hierarchy" if engine.lifecycle_mode else "batch", batch=batch, provider_status=result.status.value, reason=result.reason,
                   snapshot_hash=engine.snapshot.snapshot_hash if engine.snapshot else None,
                   diagnostics=engine.snapshot.diagnostics if engine.snapshot else {},
                   replay=engine.replay_manager.last_counts if engine.replay_manager else {},
@@ -52,6 +75,8 @@ def augment(engine, official_loss, ce, ec, model, sample_ids, external_replay):
         raise ValueError("HSSK GT SSE accepts only its owned verified replay selection")
     if engine.batch < 0 or engine.step >= 15:
         raise ValueError("Bounded smoke update outside prepared 15-epoch batch")
+    if engine.lifecycle_mode and (engine.phase != "FROZEN" or engine.frozen_hash != (engine.snapshot.snapshot_hash if engine.snapshot else None)):
+        raise ValueError("Hierarchy changed inside freeze window")
     ids = integer_ids(sample_ids, "optimization sample IDs").cpu()
     if len(set(ids.tolist())) != len(ids) or not set(ids.tolist()) <= engine.images.allowed:
         raise ValueError("Optimization IDs must belong to the frozen current batch")
@@ -91,7 +116,11 @@ def augment(engine, official_loss, ce, ec, model, sample_ids, external_replay):
     engine.step += 1
     engine.smoke_losses = dict(ce=float(ce.detach()), ec=float(ec.detach()),
                               **{k: float(v.detach()) for k, v in losses.items()}, total=float(total.detach()))
-    engine._event("update", batch=engine.batch, step=engine.step, ce=float(ce.detach()), ec=float(ec.detach()),
+    event = dict(batch=engine.batch, step=engine.step, ce=float(ce.detach()), ec=float(ec.detach()),
                   **{k: float(v.detach()) for k, v in losses.items()}, final_total=float(total.detach()),
                   counters=dict(engine.counters), snapshot_hash=engine.snapshot.snapshot_hash if engine.snapshot else None)
+    if engine.lifecycle_mode:
+        engine.pending_update = event
+    else:
+        engine._event("update", **event)
     return total

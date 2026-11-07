@@ -122,7 +122,7 @@ class PairedOnlineStream:
         self.record = record
         reset_online_rng(self.context["online_seed"])
 
-    def loader(self, dataset, session_id, batch_size, num_workers):
+    def loader(self, dataset, session_id, batch_size, num_workers, *, start_batch=0):
         if self.record is None:
             raise ValueError("Paired stream not prepared at online boundary")
         if type(session_id) is not int or not 0 <= session_id < len(self.record["sessions"]):
@@ -132,7 +132,9 @@ class PairedOnlineStream:
         if ids != session["dataset_sample_ids"] or batch_size != self.record["batch_size"]:
             raise ValueError("Paired loader dataset/batch size differs from manifest")
         positions = {value: index for index, value in enumerate(ids)}
-        batches = [[positions[value] for value in batch] for batch in session["batches"]]
+        if type(start_batch) is not int or not 0 <= start_batch <= len(session["batches"]):
+            raise ValueError("Invalid resume stream cursor")
+        batches = [[positions[value] for value in batch] for batch in session["batches"][start_batch:]]
         # Separate generator controls worker seeds; iterator creation uses no global RNG.
         worker_rng = torch.Generator().manual_seed(self.context["online_seed"] + session_id + 2**32)
         return torch.utils.data.DataLoader(dataset, batch_sampler=batches, num_workers=num_workers,
